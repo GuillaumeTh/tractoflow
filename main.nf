@@ -8,11 +8,7 @@ params.fodf_shells = false
 if(params.help) {
     usage = file("$baseDir/USAGE")
 
-    cpu_count = Runtime.runtime.availabl--dti_shells                                Shells selected to compute the dti metrics (generally b < 1200).
-                                            Please write them between quotes e.g. (--dti_shells "0 300").
-
---fodf_shells                               Shells selected to compute the fodf metrics (generally b > 700).
-                                            Please write them between quotes e.g. (--fodf_shells "0 1000").eProcessors()
+    cpu_count = Runtime.runtime.availableProcessors()
     bindings = ["b0_thr_extract_b0":"$params.b0_thr_extract_b0",
                 "dwi_shell_tolerance":"$params.dwi_shell_tolerance",
                 "dilate_b0_mask_prelim_brain_extraction":"$params.dilate_b0_mask_prelim_brain_extraction",
