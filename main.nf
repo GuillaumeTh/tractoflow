@@ -8,7 +8,11 @@ params.fodf_shells = false
 if(params.help) {
     usage = file("$baseDir/USAGE")
 
-    cpu_count = Runtime.runtime.availableProcessors()
+    cpu_count = Runtime.runtime.availabl--dti_shells                                Shells selected to compute the dti metrics (generally b < 1200).
+                                            Please write them between quotes e.g. (--dti_shells "0 300").
+
+--fodf_shells                               Shells selected to compute the fodf metrics (generally b > 700).
+                                            Please write them between quotes e.g. (--fodf_shells "0 1000").eProcessors()
     bindings = ["b0_thr_extract_b0":"$params.b0_thr_extract_b0",
                 "dwi_shell_tolerance":"$params.dwi_shell_tolerance",
                 "dilate_b0_mask_prelim_brain_extraction":"$params.dilate_b0_mask_prelim_brain_extraction",
@@ -169,10 +173,6 @@ if (params.root){
     }
 else {
     error "Error ~ Please use --root for the input data."
-}
-
-if (!params.dti_shells || !params.fodf_shells){
-    error "Error ~ Please set the DTI and fODF shells to use."
 }
 
 (dwi, gradients, t1_for_denoise) = in_data
@@ -726,11 +726,19 @@ process Extract_DTI_Shell {
         dwi_and_grad_for_rf
 
     script:
-    """
-    scil_extract_dwi_shell.py $dwi \
-        $bval $bvec $params.dti_shells ${sid}__dwi_dti.nii.gz \
-        ${sid}__bval_dti ${sid}__bvec_dti -t $params.dwi_shell_tolerance -f
-    """
+    if (params.dti_shells)
+        """
+        scil_extract_dwi_shell.py $dwi \
+            $bval $bvec $params.dti_shells ${sid}__dwi_dti.nii.gz \
+            ${sid}__bval_dti ${sid}__bvec_dti -t $params.dwi_shell_tolerance -f
+        """
+    else
+        """
+        shells=\$(cut -d ' ' --output-delimiter=$'\n' -f 1- bval | awk -F' ' '{if(\$1<$params.maximum_dti_shell_value)print\$1}' | uniq)
+        scil_extract_dwi_shell.py $dwi \
+            $bval $bvec \${shells} ${sid}__dwi_dti.nii.gz \
+            ${sid}__bval_dti ${sid}__bvec_dti -t $params.dwi_shell_tolerance -f
+        """
 }
 
 dwi_and_grad_for_dti_metrics
@@ -808,11 +816,19 @@ process Extract_FODF_Shell {
         dwi_and_grad_for_fodf
 
     script:
-    """
-    scil_extract_dwi_shell.py $dwi \
-        $bval $bvec $params.fodf_shells ${sid}__dwi_fodf.nii.gz \
-        ${sid}__bval_fodf ${sid}__bvec_fodf -t $params.dwi_shell_tolerance -f
-    """
+    if (params.fodf_shells)
+        """
+        scil_extract_dwi_shell.py $dwi \
+            $bval $bvec $params.fodf_shells ${sid}__dwi_fodf.nii.gz \
+            ${sid}__bval_fodf ${sid}__bvec_fodf -t $params.dwi_shell_tolerance -f
+        """
+    else
+        """
+        shells=\$(cut -d ' ' --output-delimiter=$'\n' -f 1- bval | awk -F' ' '{if(\$1>$params.minimum_fodf_shell_value||\$1<$params.b0_thr_extract_b0)print\$1}' | uniq)
+        scil_extract_dwi_shell.py $dwi \
+            $bval $bvec \${shells} ${sid}__dwi_fodf.nii.gz \
+            ${sid}__bval_fodf ${sid}__bvec_fodf -t $params.dwi_shell_tolerance -f
+        """
 }
 
 t1_and_mask_for_reg
