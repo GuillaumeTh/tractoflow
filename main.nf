@@ -642,8 +642,8 @@ process Normalize_DWI {
         """
     else
         """
-        shells=\$(cut -d ' ' --output-delimiter=\$'\n' -f 1- bval | \
-        awk -F' ' '{v=int(\$1)}{if(v<$params.maximum_dti_shell_value)print v}' | uniq)
+        shells=\$(cut -d ' ' --output-delimiter=\$'\n' -f 1- $bval | \
+        awk -F' ' '{v=int(\$1)}{if(v<=$params.maximum_dti_shell_value)print v}' | uniq)
         scil_extract_dwi_shell.py $dwi \
             $bval $bvec \$shells dwi_dti.nii.gz \
             bval_dti bvec_dti -t $params.dwi_shell_tolerance
@@ -744,8 +744,8 @@ process Extract_DTI_Shell {
         """
     else
         """
-        shells=\$(cut -d ' ' --output-delimiter=\$'\n' -f 1- bval | \
-        awk -F' ' '{v=int(\$1)}{if(v<$params.maximum_dti_shell_value)print v}' | uniq)
+        shells=\$(cut -d ' ' --output-delimiter=\$'\n' -f 1- $bval | \
+        awk -F' ' '{v=int(\$1)}{if(v<=$params.maximum_dti_shell_value)print v}' | uniq)
         scil_extract_dwi_shell.py $dwi \
             $bval $bvec \${shells} ${sid}__dwi_dti.nii.gz \
             ${sid}__bval_dti ${sid}__bvec_dti -t $params.dwi_shell_tolerance -f
@@ -835,9 +835,9 @@ process Extract_FODF_Shell {
         """
     else
         """
-        shells=\$(cut -d ' ' --output-delimiter=\$'\n' -f 1- bval | \
-        awk -F' ' '{v=int(\$1)}{if(v>$params.minimum_fodf_shell_value|| \
-        v<$params.b0_thr_extract_b0)print v}' | uniq)
+        shells=\$(cut -d ' ' --output-delimiter=\$'\n' -f 1- $bval | \
+        awk -F' ' '{v=int(\$1)}{if(v>=$params.minimum_fodf_shell_value|| \
+        v<=$params.b0_thr_extract_b0)print v}' | uniq)
         scil_extract_dwi_shell.py $dwi \
             $bval $bvec \${shells} ${sid}__dwi_fodf.nii.gz \
             ${sid}__bval_fodf ${sid}__bvec_fodf -t $params.dwi_shell_tolerance -f
