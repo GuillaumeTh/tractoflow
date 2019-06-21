@@ -27,6 +27,8 @@ if(params.help) {
                 "run_resample_dwi":"$params.run_resample_dwi",
                 "dwi_resolution":"$params.dwi_resolution",
                 "dwi_interpolation":"$params.dwi_interpolation",
+                "maximum_dti_shell_value":"$params.maximum_dti_shell_value",
+                "minimum_fodf_shell_value":"$params.minimum_fodf_shell_value",
                 "number_of_tissues":"$params.number_of_tissues",
                 "fa":"$params.fa",
                 "min_fa":"$params.min_fa",
