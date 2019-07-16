@@ -171,9 +171,9 @@ else {
     error "Error ~ Please use --root for the input data."
 }
 
-if (!params.dti_shells || !params.fodf_shells){
-    error "Error ~ Please set the DTI and fODF shells to use."
-}
+// if ((!params.dti_shells || !params.fodf_shells)){
+//     error "Error ~ Please set the DTI and fODF shells to use."
+// }
 
 (dwi, gradients, t1_for_denoise) = in_data
     .map{sid, bvals, bvecs, dwi, t1 -> [tuple(sid, dwi),
@@ -434,7 +434,9 @@ gradients_from_eddy
     .into{gradients_for_resample_b0;
           gradients_for_dti_shell;
           gradients_for_fodf_shell;
-          gradients_for_normalize}
+          gradients_for_normalize;
+          gradients_for_msmt_frf;
+          gradients_for_msmt_fodf}
 
 process Extract_B0 {
     cpus 2
@@ -658,7 +660,9 @@ process Resample_DWI {
     set sid, "${sid}__dwi_resampled.nii.gz" into\
         dwi_for_resample_b0,
         dwi_for_extract_dti_shell,
-        dwi_for_extract_fodf_shell
+        dwi_for_extract_fodf_shell,
+        dwi_for_msmt_frf,
+        dwi_for_msmt_fodf
 
     script:
     if (params.run_resample_dwi)
@@ -697,7 +701,9 @@ process Resample_B0 {
     set sid, "${sid}__b0_mask_resampled.nii.gz" into\
         b0_mask_for_dti_metrics,
         b0_mask_for_fodf,
-        b0_mask_for_rf
+        b0_mask_for_rf,
+        b0_mask_for_msmt_frf,
+        b0_mask_for_msmt_fodf
 
     script:
     """
@@ -724,7 +730,7 @@ process Extract_DTI_Shell {
         "${sid}__bvec_dti" into \
         dwi_and_grad_for_dti_metrics, \
         dwi_and_grad_for_rf
-
+    
     script:
     """
     scil_extract_dwi_shell.py $dwi \
@@ -806,6 +812,9 @@ process Extract_FODF_Shell {
     set sid, "${sid}__dwi_fodf.nii.gz", "${sid}__bval_fodf",
         "${sid}__bvec_fodf" into\
         dwi_and_grad_for_fodf
+
+    when:
+    params.run_csd
 
     script:
     """
@@ -905,6 +914,9 @@ process Compute_FRF {
     set sid, "${sid}__frf.txt" into unique_frf, unique_frf_for_mean
     file "${sid}__frf.txt" into all_frf_to_collect
 
+    when:
+    params.run_csd
+
     script:
     if (params.set_frf)
         """
@@ -937,7 +949,7 @@ process Mean_FRF {
     file "mean_frf.txt" into mean_frf
 
     when:
-    params.mean_frf
+    params.mean_frf and params.run_csd
 
     script:
     """
@@ -967,13 +979,16 @@ process FODF_Metrics {
         file(md), file(frf) from dwi_b0_metrics_frf_for_fodf
 
     output:
-    set sid, "${sid}__fodf.nii.gz" into fodf_for_tracking
+    set sid, "${sid}__fodf.nii.gz" into csd_fodf_for_tracking
     file "${sid}__peaks.nii.gz"
     file "${sid}__peak_indices.nii.gz"
     file "${sid}__afd_max.nii.gz"
     file "${sid}__afd_total.nii.gz"
     file "${sid}__afd_sum.nii.gz"
     file "${sid}__nufo.nii.gz"
+
+    when:
+    params.run_csd
 
     script:
     """ 
@@ -995,6 +1010,63 @@ process FODF_Metrics {
         --nufo ${sid}__nufo.nii.gz --rt $params.relative_threshold -f
     """
 }
+
+dwi_for_msmt_frf
+    .join(gradients_for_msmt_frf)
+    .join(b0_mask_for_msmt_frf)
+    .set{dwi_grad_mask_for_msmt_frf}
+
+process Compute_MSMT_FRF {
+    cpus 1
+
+    input:
+    set sid, file(dwi), file(bval), file(bvec), file(mask)\
+        from dwi_grad_mask_for_msmt_frf
+
+    output:
+    set sid, "${sid}__wm_response.txt", "${sid}__gm_response.txt", "${sid}__csf_response.txt" into msmt_frf_for_fodf
+
+    when:
+    params.run_msmt
+
+    script:
+    """
+    MRTRIX_RNG_SEED=$params.random
+    dwi2response dhollander $dwi ${sid}__wm_response.txt ${sid}__gm_response.txt ${sid}__csf_response.txt -fslgrad $bvec $bval -nthreads $task.cpus -mask $mask
+    """
+}
+
+dwi_for_msmt_fodf
+    .join(gradients_for_msmt_fodf)
+    .join(b0_mask_for_msmt_fodf)
+    .join(msmt_frf_for_fodf)
+    .set{dwi_grad_mask_frf_for_msmt_fodf}
+
+process Compute_MSMT_FODF {
+    cpus 8
+
+    input:
+    set sid, file(dwi), file(bval), file(bvec), file(mask), file(wm_frf), file(gm_frf), file(csf_frf)\
+        from dwi_grad_mask_frf_for_msmt_fodf
+
+    output:
+    set sid, "${sid}__wm_fodf.nii.gz" into msmt_fodf_for_tracking
+    file "${sid}__gm_fodf.nii.gz"
+    file "${sid}__csf_fodf.nii.gz"
+
+    when:
+    params.run_msmt
+
+    script:
+    """
+    MRTRIX_RNG_SEED=$params.random
+    dwi2fod msmt_csd $dwi $wm_frf ${sid}__wm_fodf.nii.gz $gm_frf ${sid}__gm_fodf.nii.gz $csf_frf ${sid}__csf_fodf.nii.gz -fslgrad $bvec $bval -nthreads $task.cpus -mask $mask
+    """
+}
+
+csd_fodf_for_tracking
+    .mix(msmt_fodf_for_tracking)
+    .set{fodf_for_tracking}
 
 process PFT_Maps {
     cpus 1
