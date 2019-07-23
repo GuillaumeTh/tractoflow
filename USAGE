@@ -64,6 +64,12 @@ OPTIONAL ARGUMENTS (current value)
 --dwi_resolution                            DWI resolution ($dwi_resolution).
 --dwi_interpolation                         Interpolation method [nn, lin, quad, cubic] ($dwi_interpolation).
 
+--run_t1_denoising                          Run T1 denoising ($run_t1_denoising).
+
+--run_resample_t1                           Run resample DWI ($run_resample_t1).
+--t1_resolution                             DWI resolution ($t1_resolution).
+--t1_interpolation                          Interpolation method [nn, lin, quad, cubic] ($t1_interpolation).
+
 --number_of_tissues                         Number of tissue classes ($number_of_tissues).
 
 --fa                                        Initial FA threshold to compute the frf ($fa).
