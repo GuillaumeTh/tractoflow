@@ -848,6 +848,17 @@ process DTI_Metrics {
     """
 }
 
+
+def results = params.fodf_shells?.tokenize().sort()
+
+def shells_splitted = results[(1..-1)]
+
+def minimal_shells = results[0]
+
+ch_shells_splitted = Channel.from(shells_splitted)
+ch_minimal_shells = Channel.from(minimal_shells)
+
+
 dwi_for_extract_fodf_shell
     .join(gradients_for_fodf_shell)
     .set{dwi_and_grad_for_extract_fodf_shell}
@@ -858,10 +869,12 @@ process Extract_FODF_Shell {
     input:
     set sid, file(dwi), file(bval), file(bvec)\
         from dwi_and_grad_for_extract_fodf_shell
+    val minimal from ch_minimal_shells.first()
+    each shell from ch_shells_splitted
 
     output:
-    set sid, "${sid}__dwi_fodf.nii.gz", "${sid}__bval_fodf",
-        "${sid}__bvec_fodf" into\
+    set sid, shell, "${sid}__dwi_fodf_${shell}.nii.gz", "${sid}__bval_fodf_${shell}",
+        "${sid}__bvec_fodf_${shell}" into\
         dwi_and_grad_for_fodf
 
     script:
@@ -870,8 +883,9 @@ process Extract_FODF_Shell {
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
     scil_extract_dwi_shell.py $dwi \
-        $bval $bvec $params.fodf_shells ${sid}__dwi_fodf.nii.gz \
-        ${sid}__bval_fodf ${sid}__bvec_fodf -t $params.dwi_shell_tolerance -f
+        $bval $bvec $minimal $shell ${sid}__dwi_fodf_${shell}.nii.gz \
+        ${sid}__bval_fodf_${shell} ${sid}__bvec_fodf_${shell}\
+        -t $params.dwi_shell_tolerance -f
     """
 }
 
@@ -971,65 +985,19 @@ process Compute_FRF {
     file "${sid}__frf.txt" into all_frf_to_collect
 
     script:
-    if (params.set_frf)
-        """
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-        export OMP_NUM_THREADS=1
-        export OPENBLAS_NUM_THREADS=1
-        scil_compute_ssst_frf.py $dwi $bval $bvec frf.txt --mask $b0_mask\
-        --fa $params.fa --min_fa $params.min_fa --min_nvox $params.min_nvox\
-        --roi_radius $params.roi_radius
-        scil_set_response_function.py frf.txt $params.manual_frf ${sid}__frf.txt
-        """
-    else
-        """
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-        export OMP_NUM_THREADS=1
-        export OPENBLAS_NUM_THREADS=1
-        scil_compute_ssst_frf.py $dwi $bval $bvec ${sid}__frf.txt --mask $b0_mask\
-        --fa $params.fa --min_fa $params.min_fa --min_nvox $params.min_nvox\
-        --roi_radius $params.roi_radius
-        """
-}
-
-all_frf_to_collect
-    .collect()
-    .set{all_frf_for_mean_frf}
-
-process Mean_FRF {
-    cpus 1
-    publishDir = params.Mean_FRF_Publish_Dir
-    tag = {"All_FRF"}
-
-    input:
-    file(all_frf) from all_frf_for_mean_frf
-
-    output:
-    file "mean_frf.txt" into mean_frf
-
-    when:
-    params.mean_frf
-
-    script:
     """
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_compute_mean_frf.py $all_frf mean_frf.txt
+    scil_compute_ssst_frf.py $dwi $bval $bvec frf.txt --mask $b0_mask\
+    --fa $params.fa --min_fa $params.min_fa --min_nvox $params.min_nvox\
+    --roi_radius $params.roi_radius
+    scil_set_response_function.py frf.txt $params.manual_frf ${sid}__frf.txt
     """
-}
-
-frf_for_fodf = unique_frf
-
-if (params.mean_frf) {
-    frf_for_fodf = unique_frf_for_mean
-                   .merge(mean_frf)
-                   .map{it -> [it[0], it[2]]}
 }
 
 dwi_and_grad_for_fodf
     .join(b0_mask_for_fodf)
-    .join(fa_md_for_fodf)
     .join(frf_for_fodf)
     .set{dwi_b0_metrics_frf_for_fodf}
 
@@ -1037,17 +1005,11 @@ process FODF_Metrics {
     cpus params.processes_fodf
 
     input:
-    set sid, file(dwi), file(bval), file(bvec), file(b0_mask), file(fa),
-        file(md), file(frf) from dwi_b0_metrics_frf_for_fodf
+    set sid, val(shell), file(dwi), file(bval), file(bvec), file(b0_mask),
+        file(frf) from dwi_b0_metrics_frf_for_fodf
 
     output:
-    set sid, "${sid}__fodf.nii.gz" into fodf_for_tracking
-    file "${sid}__peaks.nii.gz"
-    file "${sid}__peak_indices.nii.gz"
-    file "${sid}__afd_max.nii.gz"
-    file "${sid}__afd_total.nii.gz"
-    file "${sid}__afd_sum.nii.gz"
-    file "${sid}__nufo.nii.gz"
+    set sid, "${sid}__fodf_${shell}.nii.gz" into fodf_for_merge
 
     script:
     """
@@ -1056,20 +1018,54 @@ process FODF_Metrics {
     export OPENBLAS_NUM_THREADS=1
     scil_compute_fodf.py $dwi $bval $bvec $frf --sh_order $params.sh_order\
         --sh_basis $params.basis --force_b0_threshold --mask $b0_mask\
-        --fodf ${sid}__fodf.nii.gz --peaks ${sid}__peaks.nii.gz\
-        --peak_indices ${sid}__peak_indices.nii.gz --processes $task.cpus
+        --fodf ${sid}__fodf_${shell}.nii.gz --processes $task.cpus
+    """
+}
 
-    scil_compute_fodf_max_in_ventricles.py ${sid}__fodf.nii.gz $fa $md\
-        --max_value_output ventricles_fodf_max_value.txt --sh_basis $params.basis\
-        --fa_t $params.max_fa_in_ventricle --md_t $params.min_md_in_ventricle\
-        -f
+fodf_for_merge
+    .groupTuple(size: 3)
+    .map{sid, arr -> [sid, arr.join(" ")]}
+    .set{fodf_n_shells_for_merge}
 
-    a_threshold=\$(echo $params.fodf_metrics_a_factor*\$(cat ventricles_fodf_max_value.txt)|bc)
+process Merge_FODF {
+    cpus 3
 
-    scil_compute_fodf_metrics.py ${sid}__fodf.nii.gz \${a_threshold}\
-        --mask $b0_mask --sh_basis $params.basis --afd ${sid}__afd_max.nii.gz\
-        --afd_total ${sid}__afd_total.nii.gz --afd_sum ${sid}__afd_sum.nii.gz\
-        --nufo ${sid}__nufo.nii.gz --rt $params.relative_threshold -f
+    input:
+    set sid, val(shell), file(dwi), file(bval), file(bvec), file(b0_mask),
+        file(frf) from fodf_n_shells_for_merge
+
+    output:
+    set sid, "${sid}__fodf_${shell}.nii.gz" into fodf_for_tracking
+
+    script:
+    """
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    scil_compute_fodf.py $dwi $bval $bvec $frf --sh_order $params.sh_order\
+        --sh_basis $params.basis --force_b0_threshold --mask $b0_mask\
+        --fodf ${sid}__fodf_${shell}.nii.gz --processes $task.cpus
+    """
+}
+
+process FODF_Metrics {
+    cpus 3
+
+    input:
+    set sid, val(shell), file(dwi), file(bval), file(bvec), file(b0_mask),
+        file(frf) from dwi_b0_metrics_frf_for_fodf
+
+    output:
+    set sid, "${sid}__fodf_${shell}.nii.gz" into fodf_for_tracking
+
+    script:
+    """
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    scil_compute_fodf.py $dwi $bval $bvec $frf --sh_order $params.sh_order\
+        --sh_basis $params.basis --force_b0_threshold --mask $b0_mask\
+        --fodf ${sid}__fodf_${shell}.nii.gz --processes $task.cpus
     """
 }
 
