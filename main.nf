@@ -440,7 +440,7 @@ dwi_gradients_from_eddy
 
 dwi_from_eddy
     .mix(dwi_from_eddy_topup)
-    .set{dwi_for_bet}
+    .set{dwi_for_N4}
 
 gradients_from_eddy
     .mix(gradients_from_eddy_topup)
@@ -456,7 +456,7 @@ process Extract_B0 {
     set sid, file(dwi), file(bval), file(bvec) from dwi_gradients_for_extract_b0
 
     output:
-    set sid, "${sid}__b0.nii.gz" into b0_for_bet
+    set sid, "${sid}__b0.nii.gz" into b0_for_N4
 
     script:
     """
@@ -468,41 +468,19 @@ process Extract_B0 {
     """
 }
 
-dwi_for_bet
-    .join(b0_for_bet)
-    .set{dwi_b0_for_bet}
-
-process Bet_DWI {
-    cpus 2
-
-    input:
-    set sid, file(dwi), file(b0) from dwi_b0_for_bet
-
-    output:
-    set sid, "${sid}__b0_bet.nii.gz", "${sid}__b0_bet_mask.nii.gz" into\
-        b0_and_mask_for_crop
-    set sid, "${sid}__dwi_bet.nii.gz", "${sid}__b0_bet.nii.gz", 
-        "${sid}__b0_bet_mask.nii.gz" into dwi_b0_b0_mask_for_n4
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    bet $b0 ${sid}__b0_bet.nii.gz -m -R -f $params.bet_dwi_final_f
-    mrcalc $dwi ${sid}__b0_bet_mask.nii.gz -mult ${sid}__dwi_bet.nii.gz -quiet -nthreads 1
-    """
-}
+dwi_for_N4
+    .join(b0_for_N4)
+    .set{dwi_b0_for_N4}
 
 process N4_DWI {
-    cpus 1
+    cpus 3
 
     input:
-    set sid, file(dwi), file(b0), file(b0_mask)\
-        from dwi_b0_b0_mask_for_n4
+    set sid, file(dwi), file(b0)\
+        from dwi_b0_for_N4
 
     output:
-    set sid, "${sid}__dwi_n4.nii.gz" into dwi_for_crop
+    set sid, "${sid}__dwi_n4.nii.gz", "${sid}__b0_n4.nii.gz" into dwi_b0_for_bet
 
     script:
     """
@@ -513,13 +491,29 @@ process N4_DWI {
         -o [${sid}__b0_n4.nii.gz, bias_field_b0.nii.gz]\
         -c [300x150x75x50, 1e-6] -v 1
     scil_apply_bias_field_on_dwi.py $dwi bias_field_b0.nii.gz\
-        ${sid}__dwi_n4.nii.gz --mask $b0_mask -f
+        ${sid}__dwi_n4.nii.gz -f
     """
 }
 
-dwi_for_crop
-    .join(b0_and_mask_for_crop)
-    .set{dwi_and_b0_mask_b0_for_crop}
+process Bet_DWI {
+    cpus 2
+
+    input:
+    set sid, file(dwi), file(b0) from dwi_b0_for_bet
+
+    output:
+    set sid, "${sid}__dwi_bet.nii.gz", "${sid}__b0_bet.nii.gz", 
+        "${sid}__b0_bet_mask.nii.gz" into dwi_and_b0_mask_b0_for_crop
+
+    script:
+    """
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    bet $b0 ${sid}__b0_bet.nii.gz -m -R -f $params.bet_dwi_final_f
+    mrcalc $dwi ${sid}__b0_bet_mask.nii.gz -mult ${sid}__dwi_bet.nii.gz -quiet -nthreads 1
+    """
+}
 
 process Crop_DWI {
     cpus 1
