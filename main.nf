@@ -35,7 +35,6 @@ if(params.help) {
                 "fa":"$params.fa",
                 "min_fa":"$params.min_fa",
                 "roi_radius":"$params.roi_radius",
-                "set_frf":"$params.set_frf",
                 "manual_frf":"$params.manual_frf",
                 "mean_frf":"$params.mean_frf",
                 "sh_order":"$params.sh_order",
@@ -109,7 +108,6 @@ log.info "[fODF shells]"
 log.info "fODF shells: $params.fodf_shells"
 log.info ""
 log.info "[Compute fiber response function (FRF)]"
-log.info "Set FRF: $params.set_frf"
 log.info "FRF value: $params.manual_frf"
 log.info ""
 log.info "[Mean FRF]"
@@ -745,6 +743,7 @@ process Resample_B0 {
     set sid, "${sid}__b0_mask_resampled.nii.gz" into\
         b0_mask_for_dti_metrics,
         b0_mask_for_fodf,
+        b0_mask_for_fodf_metrics,
         b0_mask_for_rf
 
     script:
@@ -981,8 +980,7 @@ process Compute_FRF {
         from dwi_b0_for_rf
 
     output:
-    set sid, "${sid}__frf.txt" into unique_frf, unique_frf_for_mean
-    file "${sid}__frf.txt" into all_frf_to_collect
+    set sid, "${sid}__frf.txt" into frf_for_fodf
 
     script:
     """
@@ -997,11 +995,11 @@ process Compute_FRF {
 }
 
 dwi_and_grad_for_fodf
-    .join(b0_mask_for_fodf)
-    .join(frf_for_fodf)
+    .combine(b0_mask_for_fodf, by: 0)
+    .combine(frf_for_fodf, by: 0)
     .set{dwi_b0_metrics_frf_for_fodf}
 
-process FODF_Metrics {
+process FODF {
     cpus params.processes_fodf
 
     input:
@@ -1023,49 +1021,59 @@ process FODF_Metrics {
 }
 
 fodf_for_merge
-    .groupTuple(size: 3)
-    .map{sid, arr -> [sid, arr.join(" ")]}
+    .groupTuple()
     .set{fodf_n_shells_for_merge}
 
 process Merge_FODF {
     cpus 3
 
     input:
-    set sid, val(shell), file(dwi), file(bval), file(bvec), file(b0_mask),
-        file(frf) from fodf_n_shells_for_merge
+    set sid, file(dwi) from fodf_n_shells_for_merge
 
     output:
-    set sid, "${sid}__fodf_${shell}.nii.gz" into fodf_for_tracking
+    set sid, "${sid}__fodf.nii.gz" into fodf_for_tracking, fodf_for_fodf_metrics
 
     script:
     """
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_compute_fodf.py $dwi $bval $bvec $frf --sh_order $params.sh_order\
-        --sh_basis $params.basis --force_b0_threshold --mask $b0_mask\
-        --fodf ${sid}__fodf_${shell}.nii.gz --processes $task.cpus
+    scil_merge_sh.py $dwi ${sid}__fodf.nii.gz
     """
 }
+
+fodf_for_fodf_metrics
+    .join(b0_mask_for_fodf_metrics)
+    .join(fa_md_for_fodf)
+    .set{fodf_b0_metrics_for_fodf_metrics}
 
 process FODF_Metrics {
     cpus 3
 
     input:
-    set sid, val(shell), file(dwi), file(bval), file(bvec), file(b0_mask),
-        file(frf) from dwi_b0_metrics_frf_for_fodf
+    set sid, file(fodf), file(b0_mask), file(fa), file(md)\
+        from fodf_b0_metrics_for_fodf_metrics
 
     output:
-    set sid, "${sid}__fodf_${shell}.nii.gz" into fodf_for_tracking
+    file "${sid}__afd_max.nii.gz"
+    file "${sid}__afd_total.nii.gz"
+    file "${sid}__afd_sum.nii.gz"
+    file "${sid}__nufo.nii.gz"
 
     script:
     """
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_compute_fodf.py $dwi $bval $bvec $frf --sh_order $params.sh_order\
-        --sh_basis $params.basis --force_b0_threshold --mask $b0_mask\
-        --fodf ${sid}__fodf_${shell}.nii.gz --processes $task.cpus
+    scil_compute_fodf_max_in_ventricles.py $fodf $fa $md\
+        --max_value_output ventricles_fodf_max_value.txt --sh_basis $params.basis\
+        --fa_t $params.max_fa_in_ventricle --md_t $params.min_md_in_ventricle\
+        -f
+    a_threshold=\$(echo $params.fodf_metrics_a_factor*\$(cat ventricles_fodf_max_value.txt)|bc)
+    scil_compute_fodf_metrics.py ${sid}__fodf.nii.gz \${a_threshold}\
+        --mask $b0_mask --sh_basis $params.basis --afd ${sid}__afd_max.nii.gz\
+        --afd_total ${sid}__afd_total.nii.gz --afd_sum ${sid}__afd_sum.nii.gz\
+        --nufo ${sid}__nufo.nii.gz --rt $params.relative_threshold -f
     """
 }
 
