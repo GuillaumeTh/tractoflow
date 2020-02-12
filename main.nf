@@ -23,7 +23,6 @@ if(params.help) {
                 "bet_topup_before_eddy_f":"$params.bet_topup_before_eddy_f",
                 "use_slice_drop_correction":"$params.use_slice_drop_correction",
                 "bet_dwi_final_f":"$params.bet_dwi_final_f",
-                "fa_mask_threshold":"$params.fa_mask_threshold",
                 "run_resample_dwi":"$params.run_resample_dwi",
                 "dwi_resolution":"$params.dwi_resolution",
                 "dwi_interpolation":"$params.dwi_interpolation",
