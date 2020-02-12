@@ -50,13 +50,9 @@ OPTIONAL ARGUMENTS (current value)
 
 --bet_dwi_final_f                           Fractional Intensity threshold for the final DWI BET ($bet_dwi_final_f).
 
---fa_mask_threshold                         FA threshold to compute WM mask for normalization ($fa_mask_threshold).
-
 --run_resample_dwi                          Run resample DWI ($run_resample_dwi).
 --dwi_resolution                            DWI resolution ($dwi_resolution).
 --dwi_interpolation                         DWI interpolation method [nn, lin, quad, cubic] ($dwi_interpolation).
-
---run_t1_denoising                          Run T1 denoising ($run_t1_denoising).
 
 --processes_denoise_dwi                     Number of processes for DWI denoising task ($processes_denoise_dwi).
 --processes_eddy                            Number of processes for eddy task ($processes_eddy).
