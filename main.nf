@@ -1,10 +1,6 @@
 #!/usr/bin/env nextflow
 
-import groovy.json.*
-
 params.root = false
-params.bids = false
-params.bids_config = false
 params.help = false
 params.dti_shells = false
 params.fodf_shells = false
@@ -35,30 +31,6 @@ if(params.help) {
                 "run_resample_t1":"$params.run_resample_t1",
                 "t1_resolution":"$params.t1_resolution",
                 "t1_interpolation":"$params.t1_interpolation",
-                "number_of_tissues":"$params.number_of_tissues",
-                "fa":"$params.fa",
-                "min_fa":"$params.min_fa",
-                "roi_radius":"$params.roi_radius",
-                "set_frf":"$params.set_frf",
-                "manual_frf":"$params.manual_frf",
-                "mean_frf":"$params.mean_frf",
-                "sh_order":"$params.sh_order",
-                "basis":"$params.basis",
-                "fodf_metrics_a_factor":"$params.fodf_metrics_a_factor",
-                "relative_threshold":"$params.relative_threshold",
-                "max_fa_in_ventricle":"$params.max_fa_in_ventricle",
-                "min_md_in_ventricle":"$params.min_md_in_ventricle",
-                "wm_seeding":"$params.wm_seeding",
-                "algo":"$params.algo",
-                "seeding":"$params.seeding",
-                "nbr_seeds":"$params.nbr_seeds",
-                "random":"$params.random",
-                "step":"$params.step",
-                "theta":"$params.theta",
-                "min_len":"$params.min_len",
-                "max_len":"$params.max_len",
-                "compress_streamlines":"$params.compress_streamlines",
-                "compress_value":"$params.compress_value",
                 "cpu_count":"$cpu_count",
                 "template_t1":"$params.template_t1",
                 "processes_brain_extraction_t1":"$params.processes_brain_extraction_t1",
@@ -75,8 +47,8 @@ if(params.help) {
     return
 }
 
-log.info "TractoFlow pipeline"
-log.info "==================="
+log.info "Preprocessing linear pipeline"
+log.info "============================="
 log.info ""
 log.info "Start time: $workflow.start"
 log.info ""
@@ -109,36 +81,6 @@ log.info ""
 log.info "[DTI shells]"
 log.info "DTI shells: $params.dti_shells"
 log.info ""
-log.info "[fODF shells]"
-log.info "fODF shells: $params.fodf_shells"
-log.info ""
-log.info "[Compute fiber response function (FRF)]"
-log.info "Set FRF: $params.set_frf"
-log.info "FRF value: $params.manual_frf"
-log.info ""
-log.info "[Mean FRF]"
-log.info "Mean FRF: $params.mean_frf"
-log.info ""
-log.info "[FODF Metrics]"
-log.info "FODF basis: $params.basis"
-log.info "SH order: $params.sh_order"
-log.info ""
-log.info "[Seeding mask]"
-log.info "WM seeding: $params.wm_seeding"
-log.info ""
-log.info "[PFT tracking]"
-log.info "Algo: $params.algo"
-log.info "Seeding type: $params.seeding"
-log.info "Number of seeds: $params.nbr_seeds"
-log.info "Random seed: $params.random"
-log.info "Step size: $params.step"
-log.info "Theta: $params.theta"
-log.info "Minimum length: $params.min_len"
-log.info "Maximum length: $params.max_len"
-log.info "FODF basis: $params.basis"
-log.info "Compress streamlines: $params.compress_streamlines"
-log.info "Compressing threshold: $params.compress_value"
-log.info ""
 
 log.info "Number of processes per tasks"
 log.info "============================="
@@ -161,135 +103,41 @@ workflow.onComplete {
     log.info "Execution duration: $workflow.duration"
 }
 
-if (params.root && !(params.bids && params.bids_config)){
+if (params.root){
     log.info "Input: $params.root"
     root = file(params.root)
-    data = Channel
+    in_data = Channel
         .fromFilePairs("$root/**/*{bval,bvec,dwi.nii.gz,t1.nii.gz}",
                        size: 4,
                        maxDepth:1,
                        flat: true) {it.parent.name}
-
-    data
-        .map{[it, params.readout, params.encoding_direction].flatten()}
-        .into{in_data; check_subjects_number}
-
     Channel
     .fromPath("$root/**/*rev_b0.nii.gz",
                     maxDepth:1)
     .map{[it.parent.name, it]}
     .into{rev_b0; check_rev_b0}
-}
-else if (params.bids || params.bids_config){
-    if (!params.bids_config) {
-        log.info "Input BIDS: $params.bids"
-        bids = file(params.bids)
-        process Read_BIDS {
-            publishDir = params.Read_BIDS_Publish_Dir
-            scratch = false
-            stageInMode = 'symlink'
-            tag = {"Read_BIDS"}
-            errorStrategy = { task.attempt <= 3 ? 'retry' : 'terminate' }
-
-            input:
-            file(bids_folder) from bids
-
-            output:
-            file "tractoflow_bids_struct.json" into bids_struct
-
-            script:
-            """
-            scil_validate_bids.py $bids_folder tractoflow_bids_struct.json\
-                --readout $params.readout
-            """
-        }
     }
-
-    else {
-        log.info "BIDS config: $params.bids_config"
-        config = file(params.bids_config)
-        bids_struct = Channel.from(config)
-    }
-
-    ch_in_data = Channel.create()
-    ch_rev_b0 = Channel.create()
-    bids_struct.map{it ->
-    jsonSlurper = new JsonSlurper()
-        data = jsonSlurper.parseText(it.getText())
-        for (item in data){
-            sid = "sub-" + item.subject + "_ses-" + item.session + "_run-" + item.run
-
-            for (key in item.keySet()){
-                if(item[key] == 'todo'){
-                    error "Error ~ Please look at your tractoflow_bids_struct.json " +
-                    "in Read_BIDS folder.\nPlease fix todo fields and give " +
-                    "this file in input using --bids_config option instead of" +
-                    "using --bids."
-                }
-                else if (item[key] == 'error_readout'){
-                    error "Error ~ Please look at your tractoflow_bids_struct.json " +
-                    "in Read_BIDS folder.\nPlease fix error_readout fields. "+
-                    "This error indicate that readout time looks wrong.\n"+
-                    "Please correct the value or remove the subject in the json and " +
-                    "give the updated file in input using --bids_config option instead of" +
-                    "using --bids."
-                }
-            }
-            sub = [sid, file(item.bval), file(item.bvec), file(item.dwi),
-                   file(item.t1), item.TotalReadoutTime, item.DWIPhaseEncodingDir[0]]
-            ch_in_data.bind(sub)
-
-            if(item.rev_b0) {
-                sub_rev_b0 = [sid, file(item.rev_b0)]
-                ch_rev_b0.bind(sub_rev_b0)}
-        }
-
-        ch_in_data.close()
-        ch_rev_b0.close()
-    }
-
-    ch_in_data.into{in_data; check_subjects_number}
-    ch_rev_b0.into{rev_b0; check_rev_b0}
-}
 else {
-    error "Error ~ Please use --root, --bids or --bids_config for the input data."
+    error "Error ~ Please use --root for the input data."
 }
 
 if (!params.dti_shells || !params.fodf_shells){
     error "Error ~ Please set the DTI and fODF shells to use."
 }
 
-(dwi, gradients, t1_for_denoise, readout_encoding) = in_data
-    .map{sid, bvals, bvecs, dwi, t1, readout, encoding -> [tuple(sid, dwi),
+(dwi, gradients, t1_for_denoise) = in_data
+    .map{sid, bvals, bvecs, dwi, t1 -> [tuple(sid, dwi),
                                         tuple(sid, bvals, bvecs),
-                                        tuple(sid, t1),
-                                        tuple(sid, readout, encoding)]}
-    .separate(4)
+                                        tuple(sid, t1)]}
+    .separate(3)
 
-check_rev_b0.count().into{ rev_b0_counter; number_rev_b0_for_compare }
-
-check_subjects_number.count().into{ number_subj_for_null_check; number_subj_for_compare }
-
-if (number_subj_for_null_check == 0){
-    error "Error ~ No subjects found. Please check the naming convention or your BIDS folder."
-}
-
-number_subj_for_compare.count()
-    .concat(number_rev_b0_for_compare)
-    .toList()
-    .subscribe{a, b -> if (a != b && b > 0) 
-    error "Error ~ Some subjects have a reversed phase encoded b=0 and others don't.\n" +
-          "Please be sure to have the same acquisitions for all subjects."}
+check_rev_b0.count().set{ rev_b0_counter }
 
 dwi.into{dwi_for_prelim_bet; dwi_for_denoise}
 
 gradients
     .into{gradients_for_prelim_bet; gradients_for_eddy; gradients_for_topup;
           gradients_for_eddy_topup}
-
-readout_encoding
-    .into{readout_encoding_for_topup; readout_encoding_for_eddy;
-          readout_encoding_for_eddy_topup}
 
 dwi_for_prelim_bet
     .join(gradients_for_prelim_bet)
@@ -336,7 +184,7 @@ process Bet_Prelim_DWI {
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_extract_b0.py $dwi $bval $bvec ${sid}__b0.nii.gz --mean\
+    extract_b0.py $dwi $bval $bvec ${sid}__b0.nii.gz --mean\
         --b0_thr $params.b0_thr_extract_b0
     bet ${sid}__b0.nii.gz ${sid}__b0_bet.nii.gz -m -R -f $params.bet_prelim_f
     maskfilter ${sid}__b0_bet_mask.nii.gz dilate ${sid}__b0_bet_mask_dilated.nii.gz\
@@ -378,14 +226,13 @@ process Denoise_DWI {
 dwi_for_topup
     .join(gradients_for_topup)
     .join(rev_b0)
-    .join(readout_encoding_for_topup)
     .set{dwi_gradients_rev_b0_for_topup}
 
 process Topup {
     cpus 2
 
     input:
-    set sid, file(dwi), file(bval), file(bvec), file(rev_b0), readout, encoding\
+    set sid, file(dwi), file(bval), file(bvec), file(rev_b0)\
         from dwi_gradients_rev_b0_for_topup
 
     output:
@@ -401,14 +248,14 @@ process Topup {
     export OMP_NUM_THREADS=$task.cpus
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_extract_b0.py $dwi $bval $bvec b0_mean.nii.gz --mean\
+    extract_b0.py $dwi $bval $bvec b0_mean.nii.gz --mean\
         --b0_thr $params.b0_thr_extract_b0
     antsRegistrationSyNQuick.sh -d 3 -f b0_mean.nii.gz -m $rev_b0 -o output -t r -e 1
     mv outputWarped.nii.gz ${sid}__rev_b0_warped.nii.gz
     scil_prepare_topup_command.py $dwi $bval $bvec ${sid}__rev_b0_warped.nii.gz\
         --config $params.config_topup --b0_thr $params.b0_thr_extract_b0\
-        --encoding_direction $encoding\
-        --readout $readout --output_prefix $params.prefix_topup\
+        --encoding_direction $params.encoding_direction\
+        --readout $params.readout --output_prefix $params.prefix_topup\
         --output_script
     sh topup.sh
     cp corrected_b0s.nii.gz ${sid}__corrected_b0s.nii.gz
@@ -418,14 +265,13 @@ process Topup {
 dwi_for_eddy
     .join(gradients_for_eddy)
     .join(b0_mask_for_eddy)
-    .join(readout_encoding_for_eddy)
     .set{dwi_gradients_mask_topup_files_for_eddy}
 
 process Eddy {
     cpus params.processes_eddy
 
     input:
-    set sid, file(dwi), file(bval), file(bvec), file(mask), readout, encoding\
+    set sid, file(dwi), file(bval), file(bvec), file(mask)\
         from dwi_gradients_mask_topup_files_for_eddy
     val(rev_b0_count) from rev_b0_counter
 
@@ -454,8 +300,8 @@ process Eddy {
         export OPENBLAS_NUM_THREADS=1
         scil_prepare_eddy_command.py $dwi $bval $bvec $mask\
             --eddy_cmd $params.eddy_cmd --b0_thr $params.b0_thr_extract_b0\
-            --encoding_direction $encoding\
-            --readout $readout --output_script --fix_seed\
+            --encoding_direction $params.encoding_direction\
+            --readout $params.readout --output_script --fix_seed\
             $slice_drop_flag
         sh eddy.sh
         fslmaths dwi_eddy_corrected.nii.gz -thr 0 ${sid}__dwi_corrected.nii.gz
@@ -475,7 +321,6 @@ process Eddy {
 dwi_for_eddy_topup
     .join(gradients_for_eddy_topup)
     .join(topup_files_for_eddy_topup)
-    .join(readout_encoding_for_eddy_topup)
     .set{dwi_gradients_mask_topup_files_for_eddy_topup}
 
 process Eddy_Topup {
@@ -483,7 +328,7 @@ process Eddy_Topup {
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(b0s_corrected),
-        file(field), file(movpar), readout, encoding\
+        file(field), file(movpar)\
         from dwi_gradients_mask_topup_files_for_eddy_topup
     val(rev_b0_count) from rev_b0_counter
 
@@ -517,8 +362,8 @@ process Eddy_Topup {
         scil_prepare_eddy_command.py $dwi $bval $bvec ${sid}__b0_bet_mask.nii.gz\
             --topup $params.prefix_topup --eddy_cmd $params.eddy_cmd\
             --b0_thr $params.b0_thr_extract_b0\
-            --encoding_direction $encoding\
-            --readout $readout --output_script --fix_seed\
+            --encoding_direction $params.encoding_direction\
+            --readout $params.readout --output_script --fix_seed\
             $slice_drop_flag
         sh eddy.sh
         fslmaths dwi_eddy_corrected.nii.gz -thr 0 ${sid}__dwi_corrected.nii.gz
@@ -564,7 +409,7 @@ process Extract_B0 {
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_extract_b0.py $dwi $bval $bvec ${sid}__b0.nii.gz --mean\
+    extract_b0.py $dwi $bval $bvec ${sid}__b0.nii.gz --mean\
         --b0_thr $params.b0_thr_extract_b0
     """
 }
@@ -630,8 +475,7 @@ process Crop_DWI {
 
     output:
     set sid, "${sid}__dwi_cropped.nii.gz",
-        "${sid}__b0_mask_cropped.nii.gz" into dwi_mask_for_normalize
-    set sid, "${sid}__b0_mask_cropped.nii.gz" into mask_for_resample
+        "${sid}__b0_mask_cropped.nii.gz" into dwi_mask_for_resample
     file "${sid}__b0_cropped.nii.gz"
 
     script:
@@ -761,39 +605,6 @@ process Crop_T1 {
     """
 }
 
-
-dwi_mask_for_normalize
-    .join(gradients_for_normalize)
-    .set{dwi_mask_grad_for_normalize}
-process Normalize_DWI {
-    cpus 3
-
-    input:
-    set sid, file(dwi), file(mask), file(bval), file(bvec) from dwi_mask_grad_for_normalize
-
-    output:
-    set sid, "${sid}__dwi_normalized.nii.gz" into dwi_for_resample
-    file "${sid}_fa_wm_mask.nii.gz"
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    scil_extract_dwi_shell.py $dwi \
-        $bval $bvec $params.dti_shells dwi_dti.nii.gz \
-        bval_dti bvec_dti -t $params.dwi_shell_tolerance
-    scil_compute_dti_metrics.py dwi_dti.nii.gz bval_dti bvec_dti --mask $mask\
-        --not_all --fa fa.nii.gz
-    mrthreshold fa.nii.gz ${sid}_fa_wm_mask.nii.gz -abs $params.fa_mask_threshold -nthreads 1
-    dwinormalise $dwi ${sid}_fa_wm_mask.nii.gz ${sid}__dwi_normalized.nii.gz\
-        -fslgrad $bvec $bval -nthreads 1
-    """
-}
-
-dwi_for_resample
-    .join(mask_for_resample)
-    .set{dwi_mask_for_resample}
 process Resample_DWI {
     cpus 3
 
@@ -853,7 +664,7 @@ process Resample_B0 {
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    scil_extract_b0.py $dwi $bval $bvec ${sid}__b0_resampled.nii.gz --mean\
+    extract_b0.py $dwi $bval $bvec ${sid}__b0_resampled.nii.gz --mean\
         --b0_thr $params.b0_thr_extract_b0
     mrthreshold ${sid}__b0_resampled.nii.gz ${sid}__b0_mask_resampled.nii.gz\
         --abs 0.00001 -nthreads 1
@@ -949,33 +760,6 @@ process DTI_Metrics {
     """
 }
 
-dwi_for_extract_fodf_shell
-    .join(gradients_for_fodf_shell)
-    .set{dwi_and_grad_for_extract_fodf_shell}
-
-process Extract_FODF_Shell {
-    cpus 3
-
-    input:
-    set sid, file(dwi), file(bval), file(bvec)\
-        from dwi_and_grad_for_extract_fodf_shell
-
-    output:
-    set sid, "${sid}__dwi_fodf.nii.gz", "${sid}__bval_fodf",
-        "${sid}__bvec_fodf" into\
-        dwi_and_grad_for_fodf
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    scil_extract_dwi_shell.py $dwi \
-        $bval $bvec $params.fodf_shells ${sid}__dwi_fodf.nii.gz \
-        ${sid}__bval_fodf ${sid}__bvec_fodf -t $params.dwi_shell_tolerance -f
-    """
-}
-
 t1_and_mask_for_reg
     .join(fa_for_reg)
     .join(b0_for_reg)
@@ -988,7 +772,7 @@ process Register_T1 {
     set sid, file(t1), file(t1_mask), file(fa), file(b0) from t1_fa_b0_for_reg
 
     output:
-    set sid, "${sid}__t1_warped.nii.gz" into t1_for_seg
+    file "${sid}__t1_warped.nii.gz"
     file "${sid}__output0GenericAffine.mat"
     file "${sid}__output1InverseWarp.nii.gz"
     file "${sid}__output1Warp.nii.gz"
@@ -1025,233 +809,4 @@ process Register_T1 {
         -o ${sid}__t1_mask_warped.nii.gz -n NearestNeighbor \
         -t ${sid}__output1Warp.nii.gz ${sid}__output0GenericAffine.mat
     """
-}
-
-process Segment_Tissues {
-    cpus 1
-
-    input:
-    set sid, file(t1) from t1_for_seg
-
-    output:
-    set sid, "${sid}__map_wm.nii.gz", "${sid}__map_gm.nii.gz",
-        "${sid}__map_csf.nii.gz" into map_wm_gm_csf_for_pft_maps
-    set sid, "${sid}__mask_wm.nii.gz" into wm_mask_for_seeding_mask
-    file "${sid}__mask_gm.nii.gz"
-    file "${sid}__mask_csf.nii.gz"
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    fast -t 1 -n $params.number_of_tissues\
-         -H 0.1 -I 4 -l 20.0 -g -o t1.nii.gz $t1
-    mv t1_seg_2.nii.gz ${sid}__mask_wm.nii.gz
-    mv t1_seg_1.nii.gz ${sid}__mask_gm.nii.gz
-    mv t1_seg_0.nii.gz ${sid}__mask_csf.nii.gz
-    mv t1_pve_2.nii.gz ${sid}__map_wm.nii.gz
-    mv t1_pve_1.nii.gz ${sid}__map_gm.nii.gz
-    mv t1_pve_0.nii.gz ${sid}__map_csf.nii.gz
-    """
-}
-
-dwi_and_grad_for_rf
-    .join(b0_mask_for_rf)
-    .set{dwi_b0_for_rf}
-
-process Compute_FRF {
-    cpus 3
-
-    input:
-    set sid, file(dwi), file(bval), file(bvec), file(b0_mask)\
-        from dwi_b0_for_rf
-
-    output:
-    set sid, "${sid}__frf.txt" into unique_frf, unique_frf_for_mean
-    file "${sid}__frf.txt" into all_frf_to_collect
-
-    script:
-    if (params.set_frf)
-        """
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-        export OMP_NUM_THREADS=1
-        export OPENBLAS_NUM_THREADS=1
-        scil_compute_ssst_frf.py $dwi $bval $bvec frf.txt --mask $b0_mask\
-        --fa $params.fa --min_fa $params.min_fa --min_nvox $params.min_nvox\
-        --roi_radius $params.roi_radius
-        scil_set_response_function.py frf.txt $params.manual_frf ${sid}__frf.txt
-        """
-    else
-        """
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-        export OMP_NUM_THREADS=1
-        export OPENBLAS_NUM_THREADS=1
-        scil_compute_ssst_frf.py $dwi $bval $bvec ${sid}__frf.txt --mask $b0_mask\
-        --fa $params.fa --min_fa $params.min_fa --min_nvox $params.min_nvox\
-        --roi_radius $params.roi_radius
-        """
-}
-
-all_frf_to_collect
-    .collect()
-    .set{all_frf_for_mean_frf}
-
-process Mean_FRF {
-    cpus 1
-    publishDir = params.Mean_FRF_Publish_Dir
-    tag = {"All_FRF"}
-
-    input:
-    file(all_frf) from all_frf_for_mean_frf
-
-    output:
-    file "mean_frf.txt" into mean_frf
-
-    when:
-    params.mean_frf
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    scil_compute_mean_frf.py $all_frf mean_frf.txt
-    """
-}
-
-frf_for_fodf = unique_frf
-
-if (params.mean_frf) {
-    frf_for_fodf = unique_frf_for_mean
-                   .merge(mean_frf)
-                   .map{it -> [it[0], it[2]]}
-}
-
-dwi_and_grad_for_fodf
-    .join(b0_mask_for_fodf)
-    .join(fa_md_for_fodf)
-    .join(frf_for_fodf)
-    .set{dwi_b0_metrics_frf_for_fodf}
-
-process FODF_Metrics {
-    cpus params.processes_fodf
-
-    input:
-    set sid, file(dwi), file(bval), file(bvec), file(b0_mask), file(fa),
-        file(md), file(frf) from dwi_b0_metrics_frf_for_fodf
-
-    output:
-    set sid, "${sid}__fodf.nii.gz" into fodf_for_tracking
-    file "${sid}__peaks.nii.gz"
-    file "${sid}__peak_indices.nii.gz"
-    file "${sid}__afd_max.nii.gz"
-    file "${sid}__afd_total.nii.gz"
-    file "${sid}__afd_sum.nii.gz"
-    file "${sid}__nufo.nii.gz"
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    scil_compute_fodf.py $dwi $bval $bvec $frf --sh_order $params.sh_order\
-        --sh_basis $params.basis --force_b0_threshold --mask $b0_mask\
-        --fodf ${sid}__fodf.nii.gz --peaks ${sid}__peaks.nii.gz\
-        --peak_indices ${sid}__peak_indices.nii.gz --processes $task.cpus
-
-    scil_compute_fodf_max_in_ventricles.py ${sid}__fodf.nii.gz $fa $md\
-        --max_value_output ventricles_fodf_max_value.txt --sh_basis $params.basis\
-        --fa_t $params.max_fa_in_ventricle --md_t $params.min_md_in_ventricle\
-        -f
-
-    a_threshold=\$(echo $params.fodf_metrics_a_factor*\$(cat ventricles_fodf_max_value.txt)|bc)
-
-    scil_compute_fodf_metrics.py ${sid}__fodf.nii.gz \${a_threshold}\
-        --mask $b0_mask --sh_basis $params.basis --afd ${sid}__afd_max.nii.gz\
-        --afd_total ${sid}__afd_total.nii.gz --afd_sum ${sid}__afd_sum.nii.gz\
-        --nufo ${sid}__nufo.nii.gz --rt $params.relative_threshold -f
-    """
-}
-
-process PFT_Maps {
-    cpus 1
-
-    input:
-    set sid, file(wm), file(gm), file(csf) from map_wm_gm_csf_for_pft_maps
-
-    output:
-    set sid, "${sid}__map_include.nii.gz",
-        "${sid}__map_exclude.nii.gz" into pft_maps_for_tracking
-    set sid, "${sid}__interface.nii.gz" into interface_for_seeding_mask
-
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    scil_compute_maps_for_particle_filter_tracking.py $wm $gm $csf \
-    --include ${sid}__map_include.nii.gz --exclude ${sid}__map_exclude.nii.gz\
-        --interface ${sid}__interface.nii.gz -f
-    """
-}
-
-wm_mask_for_seeding_mask
-    .join(interface_for_seeding_mask)
-    .set{wm_interface_for_seeding_mask}
-
-process Seeding_Mask {
-    cpus 1
-
-    input:
-    set sid, file(wm), file(interface_mask) from wm_interface_for_seeding_mask
-
-    output:
-    set sid, "${sid}__seeding_mask.nii.gz" into seeding_mask_for_tracking
-
-    script:
-    if (params.wm_seeding)
-        """
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-        export OMP_NUM_THREADS=1
-        export OPENBLAS_NUM_THREADS=1
-        scil_mask_math.py union $wm $interface_mask ${sid}__seeding_mask.nii.gz
-        """
-    else
-        """
-        mv $interface_mask ${sid}__seeding_mask.nii.gz
-        """
-}
-
-fodf_for_tracking
-    .join(pft_maps_for_tracking)
-    .join(seeding_mask_for_tracking)
-    .set{fodf_maps_for_tracking}
-
-process Tracking {
-    cpus 2
-
-    input:
-    set sid, file(fodf), file(include), file(exclude), file(seed)\
-        from fodf_maps_for_tracking
-
-    output:
-    file "${sid}__tracking.trk"
-
-    script:
-    compress =\
-        params.compress_streamlines ? '--compress ' + params.compress_value : ''
-        """
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-        export OMP_NUM_THREADS=1
-        export OPENBLAS_NUM_THREADS=1
-        scil_compute_pft.py $fodf $seed $include $exclude\
-            ${sid}__tracking.trk --algo $params.algo\
-            --$params.seeding $params.nbr_seeds --seed $params.random\
-            --step $params.step --theta $params.theta\
-            --sfthres $params.sfthres --sfthres_init $params.sfthres_init\
-            --min_length $params.min_len --max_length $params.max_len\
-            --particles $params.particles --back $params.back\
-            --forward $params.front $compress --sh_basis $params.basis
-        """
 }
