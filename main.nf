@@ -277,12 +277,15 @@ if (!params.freesurfer_license){
     error "Error ~ Please set freesurfer license path."
 }
 
-(dwi, gradients, t1_for_denoise, readout_encoding) = in_data
+(dwi, gradients, t1, readout_encoding) = in_data
     .map{sid, bvals, bvecs, dwi, t1, readout, encoding -> [tuple(sid, dwi),
                                         tuple(sid, bvals, bvecs),
                                         tuple(sid, t1),
                                         tuple(sid, readout, encoding)]}
     .separate(4)
+
+t1
+    .into{t1_for_topup; t1_for_denoise}
 
 check_rev_b0.count().into{ rev_b0_counter; number_rev_b0_for_compare }
 
