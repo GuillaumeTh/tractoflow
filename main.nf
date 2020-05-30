@@ -8,6 +8,8 @@ params.bids_config = false
 params.help = false
 params.dti_shells = false
 params.fodf_shells = false
+params.synb0_container = false
+params.freesurfer_license = false
 
 if(params.help) {
     usage = file("$baseDir/USAGE")
@@ -267,6 +269,14 @@ if (!params.dti_shells || !params.fodf_shells){
     error "Error ~ Please set the DTI and fODF shells to use."
 }
 
+if (!params.synb0_container){
+    error "Error ~ Please set Synb0 container path."
+}
+
+if (!params.freesurfer_license){
+    error "Error ~ Please set freesurfer license path."
+}
+
 (dwi, gradients, t1_for_denoise, readout_encoding) = in_data
     .map{sid, bvals, bvecs, dwi, t1, readout, encoding -> [tuple(sid, dwi),
                                         tuple(sid, bvals, bvecs),
@@ -389,99 +399,63 @@ process Denoise_DWI {
 
 dwi_for_topup
     .join(gradients_for_topup)
-    .join(rev_b0)
-    .join(readout_encoding_for_topup)
     .set{dwi_gradients_rev_b0_for_topup}
 
-process Topup {
+process Prepare_Topup {
     cpus 2
 
     input:
-    set sid, file(dwi), file(bval), file(bvec), file(rev_b0), readout, encoding\
-        from dwi_gradients_rev_b0_for_topup
+    set sid, file(dwi), file(bval), file(bvec)\
+            from dwi_gradients_rev_b0_for_topup
 
     output:
-    set sid, "${sid}__corrected_b0s.nii.gz", "${params.prefix_topup}_fieldcoef.nii.gz",
-    "${params.prefix_topup}_movpar.txt" into topup_files_for_eddy_topup
-    file "${sid}__rev_b0_warped.nii.gz"
-
-    when:
-    params.run_topup && params.run_eddy
+    set sid, "${sid}__b0_mean.nii.gz", "${sid}__acqparams.txt"\
+        into b0_acq_for_topup
 
     script:
     """
-    export OMP_NUM_THREADS=$task.cpus
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    scil_extract_b0.py $dwi $bval $bvec b0_mean.nii.gz --mean\
-        --b0_thr $params.b0_thr_extract_b0
-    antsRegistrationSyNQuick.sh -d 3 -f b0_mean.nii.gz -m $rev_b0 -o output -t r -e 1
-    mv outputWarped.nii.gz ${sid}__rev_b0_warped.nii.gz
-    scil_prepare_topup_command.py $dwi $bval $bvec ${sid}__rev_b0_warped.nii.gz\
-        --config $params.config_topup --b0_thr $params.b0_thr_extract_b0\
-        --encoding_direction $encoding\
-        --readout $readout --out_prefix $params.prefix_topup\
-        --out_script
-    sh topup.sh
-    cp corrected_b0s.nii.gz ${sid}__corrected_b0s.nii.gz
+    scil_extract_b0.py $dwi $bval $bvec ${sid}__b0_mean.nii.gz --mean\
+            --b0_thr $params.b0_thr_extract_b0
+    echo "0 1 0 0.062" > acqparams.txt
+    echo "0 1 0 0.000" >> acqparams.txt
+    mv acqparams.txt ${sid}__acqparams.txt
     """
 }
 
-dwi_for_eddy
-    .join(gradients_for_eddy)
-    .join(b0_mask_for_eddy)
-    .join(readout_encoding_for_eddy)
-    .set{dwi_gradients_mask_topup_files_for_eddy}
+b0_acq_for_topup
+    .join(t1_for_topup)
+    .set{b0_acq_t1_for_topup}
 
-process Eddy {
-    cpus params.processes_eddy
+process SynB0 {
+    cpus 4
+    label 'synB0'
 
     input:
-    set sid, file(dwi), file(bval), file(bvec), file(mask), readout, encoding\
-        from dwi_gradients_mask_topup_files_for_eddy
-    val(rev_b0_count) from rev_b0_counter
+    set sid, file(b0), file(acq), file(t1)\
+        from b0_acq_t1_for_topup
 
     output:
-    set sid, "${sid}__dwi_corrected.nii.gz", "${sid}__bval_eddy",
-        "${sid}__dwi_eddy_corrected.bvec" into\
-        dwi_gradients_from_eddy
-    set sid, "${sid}__dwi_corrected.nii.gz" into\
-        dwi_from_eddy
-    set sid, "${sid}__bval_eddy", "${sid}__dwi_eddy_corrected.bvec" into\
-        gradients_from_eddy
+    set sid, "${sid}__b0s_corrected.nii.gz", "topup_fieldcoef.nii.gz",
+             "topup_movpar.txt" into topup_files_for_eddy_topup
 
-    when:
-    rev_b0_count == 0 || !params.run_topup || (!params.run_eddy && params.run_topup)
+    beforeScript 'mkdir $NXF_SCRATCH/INPUTS &\
+                  mkdir $NXF_SCRATCH/OUTPUTS'
 
-    // Corrected DWI is clipped to 0 since Eddy can introduce negative values.
     script:
-    if (params.run_eddy) {
-        slice_drop_flag=""
-        if (params.use_slice_drop_correction) {
-            slice_drop_flag="--slice_drop_correction"
-        }
-        """
-        export OMP_NUM_THREADS=$task.cpus
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=$task.cpus
-        export OPENBLAS_NUM_THREADS=1
-        scil_prepare_eddy_command.py $dwi $bval $bvec $mask\
-            --eddy_cmd $params.eddy_cmd --b0_thr $params.b0_thr_extract_b0\
-            --encoding_direction $encoding\
-            --readout $readout --out_script --fix_seed\
-            $slice_drop_flag
-        sh eddy.sh
-        fslmaths dwi_eddy_corrected.nii.gz -thr 0 ${sid}__dwi_corrected.nii.gz
-        mv dwi_eddy_corrected.eddy_rotated_bvecs ${sid}__dwi_eddy_corrected.bvec
-        mv $bval ${sid}__bval_eddy
-        """
-    }
-    else {
-        """
-        mv $dwi ${sid}__dwi_corrected.nii.gz
-        mv $bvec ${sid}__dwi_eddy_corrected.bvec
-        mv $bval ${sid}__bval_eddy
-        """
-    }
+    """
+    export OMP_NUM_THREADS=1
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+
+    cp $b0 INPUTS/b0.nii.gz
+    cp $t1 INPUTS/T1.nii.gz
+    cp $acq INPUTS/acqparams.txt
+
+    bash /extra/pipeline.sh
+    mv /OUTPUTS/b0_all_topup.nii.gz ${sid}__b0s_corrected.nii.gz
+    mv /OUTPUTS/topup_fieldcoef.nii.gz topup_fieldcoef.nii.gz
+    mv /OUTPUTS/topup_movpar.txt topup_movpar.txt
+    """
 }
 
 dwi_for_eddy_topup
@@ -502,65 +476,35 @@ process Eddy_Topup {
     output:
     set sid, "${sid}__dwi_corrected.nii.gz", "${sid}__bval_eddy",
         "${sid}__dwi_eddy_corrected.bvec" into\
-        dwi_gradients_from_eddy_topup
+        dwi_gradients_for_extract_b0
     set sid, "${sid}__dwi_corrected.nii.gz" into\
-        dwi_from_eddy_topup
+        dwi_for_bet
     set sid, "${sid}__bval_eddy", "${sid}__dwi_eddy_corrected.bvec" into\
-        gradients_from_eddy_topup
+        gradients_for_resample_b0, gradients_for_dti_shell,
+        gradients_for_fodf_shell, gradients_for_normalize
     file "${sid}__b0_bet_mask.nii.gz"
-
-    when:
-    rev_b0_count > 0 && params.run_topup
 
     // Corrected DWI is clipped to ensure there are no negative values
     // introduced by Eddy.
     script:
-    if (params.run_eddy) {
-        slice_drop_flag=""
-        if (params.use_slice_drop_correction)
-            slice_drop_flag="--slice_drop_correction"
-        """
-        export OMP_NUM_THREADS=$task.cpus
-        export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=$task.cpus
-        export OPENBLAS_NUM_THREADS=1
-        mrconvert $b0s_corrected b0_corrected.nii.gz -coord 3 0 -axes 0,1,2 -nthreads 1
-        bet b0_corrected.nii.gz ${sid}__b0_bet.nii.gz -m -R\
-            -f $params.bet_topup_before_eddy_f
-        scil_prepare_eddy_command.py $dwi $bval $bvec ${sid}__b0_bet_mask.nii.gz\
-            --topup $params.prefix_topup --eddy_cmd $params.eddy_cmd\
-            --b0_thr $params.b0_thr_extract_b0\
-            --encoding_direction $encoding\
-            --readout $readout --out_script --fix_seed\
-            $slice_drop_flag
-        sh eddy.sh
-        fslmaths dwi_eddy_corrected.nii.gz -thr 0 ${sid}__dwi_corrected.nii.gz
-        mv dwi_eddy_corrected.eddy_rotated_bvecs ${sid}__dwi_eddy_corrected.bvec
-        mv $bval ${sid}__bval_eddy
-        """
-    }
-    else {
-        """
-        mv $dwi ${sid}__dwi_corrected.nii.gz
-        mv $bvec ${sid}__dwi_eddy_corrected.bvec
-        mv $bval ${sid}__bval_eddy
-        """
-    }
+    export OMP_NUM_THREADS=$task.cpus
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=$task.cpus
+    export OPENBLAS_NUM_THREADS=1
+    mrconvert $b0s_corrected b0_corrected.nii.gz -coord 3 0 -axes 0,1,2 -nthreads 1
+    bet b0_corrected.nii.gz ${sid}__b0_bet.nii.gz -m -R\
+        -f $params.bet_topup_before_eddy_f
+    scil_prepare_eddy_command.py $dwi $bval $bvec ${sid}__b0_bet_mask.nii.gz\
+        --topup $params.prefix_topup --eddy_cmd $params.eddy_cmd\
+        --b0_thr $params.b0_thr_extract_b0\
+        --encoding_direction $encoding\
+        --readout $readout --out_script --fix_seed\
+        $slice_drop_flag
+    sh eddy.sh
+    fslmaths dwi_eddy_corrected.nii.gz -thr 0 ${sid}__dwi_corrected.nii.gz
+    mv dwi_eddy_corrected.eddy_rotated_bvecs ${sid}__dwi_eddy_corrected.bvec
+    mv $bval ${sid}__bval_eddy
+    """
 }
-
-dwi_gradients_from_eddy
-    .mix(dwi_gradients_from_eddy_topup)
-    .set{dwi_gradients_for_extract_b0}
-
-dwi_from_eddy
-    .mix(dwi_from_eddy_topup)
-    .set{dwi_for_bet}
-
-gradients_from_eddy
-    .mix(gradients_from_eddy_topup)
-    .into{gradients_for_resample_b0;
-          gradients_for_dti_shell;
-          gradients_for_fodf_shell;
-          gradients_for_normalize}
 
 process Extract_B0 {
     cpus 2
