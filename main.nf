@@ -501,7 +501,7 @@ process Eddy_Topup {
     bet b0_corrected.nii.gz ${sid}__b0_bet.nii.gz -m -R\
         -f $params.bet_topup_before_eddy_f
     scil_prepare_eddy_command.py $dwi $bval $bvec ${sid}__b0_bet_mask.nii.gz\
-        --topup $params.prefix_topup --eddy_cmd $params.eddy_cmd\
+        --topup topup --eddy_cmd $params.eddy_cmd\
         --b0_thr $params.b0_thr_extract_b0\
         --encoding_direction $encoding\
         --readout $readout --out_script --fix_seed\
