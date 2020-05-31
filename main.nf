@@ -490,6 +490,9 @@ process Eddy_Topup {
     // Corrected DWI is clipped to ensure there are no negative values
     // introduced by Eddy.
     script:
+    slice_drop_flag=""
+    if (params.use_slice_drop_correction)
+        slice_drop_flag="--slice_drop_correction"
     """
     export OMP_NUM_THREADS=$task.cpus
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=$task.cpus
