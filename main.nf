@@ -78,6 +78,7 @@ if(params.help) {
                 "local_max_len":"$params.local_max_len",
                 "local_compress_value":"$params.local_compress_value",
                 "local_random_seed":"$params.local_random_seed",
+                "run_ensemble_tractogram":"$params.run_ensemble_tractogram",
                 "cpu_count":"$cpu_count",
                 "template_t1":"$params.template_t1",
                 "processes_brain_extraction_t1":"$params.processes_brain_extraction_t1",
@@ -268,7 +269,12 @@ number_subj_for_compare
 dwi.into{dwi_for_prelim_bet; dwi_for_denoise}
 
 pft_random_seed = params.pft_random_seed?.tokenize(',')
+pft_theta = params.pft_theta?.tokenize(',')
+pft_step = params.pft_step?.tokenize(',')
+
 local_random_seed = params.local_random_seed?.tokenize(',')
+local_theta = params.local_theta?.tokenize(',')
+local_step = params.local_step?.tokenize(',')
 
 gradients
     .into{gradients_for_prelim_bet; gradients_for_eddy; gradients_for_topup;
@@ -1238,9 +1244,11 @@ process PFT_Tracking {
     set sid, file(fodf), file(include), file(exclude), file(seed)\
         from fodf_maps_for_pft_tracking
     each curr_seed from pft_random_seed
+    each curr_step from pft_step
+    each curr_theta from pft_theta
 
     output:
-    file "${sid}__pft_tracking_${params.pft_algo}_${params.pft_seeding_mask_type}_seed_${curr_seed}.trk"
+    set sid, "${sid}__pft_tracking_${params.pft_algo}_step_${curr_step}_theta_${curr_theta}_${params.pft_seeding_mask_type}_seed_${curr_seed}.trk" into pft_trackings_for_concat
 
     when:
         params.run_pft_tracking
@@ -1253,9 +1261,9 @@ process PFT_Tracking {
         export OMP_NUM_THREADS=1
         export OPENBLAS_NUM_THREADS=1
         scil_compute_pft.py $fodf $seed $include $exclude\
-            ${sid}__pft_tracking_${params.pft_algo}_${params.pft_seeding_mask_type}_seed_${curr_seed}.trk\
+            ${sid}__pft_tracking_${params.pft_algo}_step_${curr_step}_theta_${curr_theta}_${params.pft_seeding_mask_type}_seed_${curr_seed}.trk\
             --algo $params.pft_algo --$params.pft_seeding $params.pft_nbr_seeds\
-            --seed $curr_seed --step $params.pft_step --theta $params.pft_theta\
+            --seed $curr_seed --step $curr_step --theta $curr_theta\
             --sfthres $params.pft_sfthres --sfthres_init $params.pft_sfthres_init\
             --min_length $params.pft_min_len --max_length $params.pft_max_len\
             --particles $params.pft_particles --back $params.pft_back\
@@ -1335,9 +1343,11 @@ process Local_Tracking {
     set sid, file(fodf), file(tracking_mask), file(seed)\
         from fodf_maps_for_local_tracking
     each curr_seed from local_random_seed
+    each curr_step from local_step
+    each curr_theta from local_theta
 
     output:
-    file "${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk"
+    set sid, "${sid}__local_tracking_${params.local_algo}_step_${curr_step}_theta_${curr_theta}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk" into local_trackings_for_concat
 
     when:
         params.run_local_tracking
@@ -1350,10 +1360,36 @@ process Local_Tracking {
         export OMP_NUM_THREADS=1
         export OPENBLAS_NUM_THREADS=1
         scil_compute_local_tracking.py $fodf $seed $tracking_mask\
-            ${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk\
+            ${sid}__local_tracking_${params.local_algo}_step_${curr_step}_theta_${curr_theta}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk\
             --algo $params.local_algo --$params.local_seeding $params.local_nbr_seeds\
-            --seed $curr_seed --step $params.local_step --theta $params.local_theta\
+            --seed $curr_seed --step $curr_step --theta $curr_theta\
             --sfthres $params.local_sfthres --min_length $params.local_min_len\
             --max_length $params.local_max_len $compress --sh_basis $params.basis
         """
+}
+
+pft_trackings_for_concat.groupTuple()
+    .join(local_trackings_for_concat.groupTuple())
+    .map{sid, pft, local -> [sid, pft + local]}
+    .set{all_tractograms_for_concat}
+
+process Ensemble_Tractogram {
+    cpus 1
+
+    input:
+    set sid, file(tractograms) from all_tractograms_for_concat
+
+    output:
+    file "${sid}__ensemble_tractogram.trk"
+
+    when:
+        params.run_ensemble_tractogram
+
+    script:
+    """
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    scil_streamlines_math.py concatenate $tractograms ${sid}__ensemble_tractogram.trk
+    """
 }

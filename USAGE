@@ -111,14 +111,16 @@ OPTIONAL ARGUMENTS (current value)
 --pft_algo                                  [PFT] Tracking algorithm [prob, det] ($pft_algo).
 --pft_seeding                               [PFT] Seeding type [npv, nt] ($pft_seeding).
 --pft_nbr_seeds                             [PFT] Number of seeds related to the seeding type param ($pft_nbr_seeds).
---pft_step                                  [PFT] Step size ($pft_step).
---pft_theta                                 [PFT] Maximum angle between 2 steps ($pft_theta).
+--pft_step                                  [PFT] List of step size ($pft_step).
+                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--pft_step 0.5,1).
+--pft_theta                                 [PFT] List of maximum angle between 2 steps ($pft_theta).
+                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--pft_theta 10,20,30).
 --pft_min_len                               [PFT] Minimum length ($pft_min_len).
 --pft_max_len                               [PFT] Maximum length ($pft_max_len).
 --pft_compress_streamlines                  [PFT] Compress streamlines ($pft_compress_streamlines).
 --pft_compress_value                        [PFT] Compression error threshold ($pft_compress_value).
 --pft_random_seed                           [PFT] List of random seed numbers for the random number generator ($pft_random_seed).
-                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--pft_random_seed 0,1,2)
+                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--pft_random_seed 0,1,2).
 
 --run_local_tracking                        Run Local Tracking ($run_local_tracking).
 
@@ -131,14 +133,18 @@ OPTIONAL ARGUMENTS (current value)
 --local_algo                                [LOCAL] Tracking algorithm [prob, det] ($local_algo).
 --local_seeding                             [LOCAL] Seeding type [npv, nt] ($local_seeding).
 --local_nbr_seeds                           [LOCAL] Number of seeds related to the seeding type param ($local_nbr_seeds).
---local_step                                [LOCAL] Step size ($local_step).
---local_theta                               [LOCAL] Maximum angle between 2 steps ($local_theta).
+--local_step                                [LOCAL] List of step size ($local_step).
+                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--local_step 0.5,1).
+--local_theta                               [LOCAL] List of maximum angle between 2 steps ($local_theta).
+                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--local_theta 10,20,30).
 --local_min_len                             [LOCAL] Minimum length ($local_min_len).
 --local_max_len                             [LOCAL] Maximum length ($local_max_len).
 --local_compress_streamlines                [LOCAL] Compress streamlines ($local_compress_streamlines).
 --local_compress_value                      [LOCAL] Compression error threshold ($local_compress_value).
 --local_random_seed                         [LOCAL] List of random seed numbers for the random number generator ($local_random_seed).
-                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--local_random_seed 0,1,2)
+                                            Please write them as list separated using commat WITHOUT SPACE e.g. (--local_random_seed 0,1,2).
+
+--run_ensemble_tractogram                   Concatenate all tractograms generated in on tractogram file ($run_ensemble_tractogram).
 
 --template_t1                               Path to the template T1 directory for antsBrainExtraction.
                                             The folder must contain t1_template.nii.gz and t1_brain_probability_map.nii.gz.
