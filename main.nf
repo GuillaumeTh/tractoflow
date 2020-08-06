@@ -450,11 +450,17 @@ process SynB0 {
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OPENBLAS_NUM_THREADS=1
 
+    export PATH=\$PATH:/extra/fsl/bin
+    export FSLDIR="/extra/fsl"
+    . /extra/fsl/etc/fslconf/fsl.sh
+
     cp $b0 INPUTS/b0.nii.gz
     cp $t1 INPUTS/T1.nii.gz
     cp $acq INPUTS/acqparams.txt
 
-    bash /extra/pipeline.sh
+    sed '48d' /extra/pipeline.sh > fixed_pipeline.sh
+    bash fixed_pipeline.sh
+    topup -v --imain=/OUTPUTS/b0_all.nii.gz --datain=/INPUTS/acqparams.txt --config=b02b0.cnf --iout=/OUTPUTS/b0_all_topup.nii.gz --out=/OUTPUTS/topup --subsamp=1,1,1,1,1,1,1,1,1 --miter=10,10,10,10,10,20,20,30,30 --lambda=0.00033,0.000067,0.0000067,0.000001,0.00000033,0.000000033,0.0000000033,0.000000000033,0.00000000000067 --scale=0
     mv /OUTPUTS/b0_all_topup.nii.gz ${sid}__b0s_corrected.nii.gz
     mv /OUTPUTS/topup_fieldcoef.nii.gz topup_fieldcoef.nii.gz
     mv /OUTPUTS/topup_movpar.txt topup_movpar.txt
