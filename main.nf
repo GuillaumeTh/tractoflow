@@ -320,7 +320,7 @@ process README {
 }
 
 process Bet_Prelim_DWI {
-    cpus 2
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec) from dwi_gradient_for_prelim_bet
@@ -383,7 +383,7 @@ dwi_for_topup
     .set{dwi_gradients_rev_b0_for_topup}
 
 process Topup {
-    cpus 2
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(rev_b0), readout, encoding\
@@ -553,7 +553,7 @@ gradients_from_eddy
           gradients_for_normalize}
 
 process Extract_B0 {
-    cpus 2
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec) from dwi_gradients_for_extract_b0
@@ -576,7 +576,7 @@ dwi_for_bet
     .set{dwi_b0_for_bet}
 
 process Bet_DWI {
-    cpus 2
+    cpus 4
 
     input:
     set sid, file(dwi), file(b0) from dwi_b0_for_bet
@@ -599,7 +599,7 @@ process Bet_DWI {
 }
 
 process N4_DWI {
-    cpus 1
+    cpus 4
 
     input:
     set sid, file(dwi), file(b0), file(b0_mask)\
@@ -626,7 +626,7 @@ dwi_for_crop
     .set{dwi_and_b0_mask_b0_for_crop}
 
 process Crop_DWI {
-    cpus 1
+    cpus 4
 
     input:
     set sid, file(dwi), file(b0), file(b0_mask) from dwi_and_b0_mask_b0_for_crop
@@ -771,7 +771,7 @@ dwi_mask_for_normalize
     .join(gradients_for_normalize)
     .set{dwi_mask_grad_for_normalize}
 process Normalize_DWI {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(mask), file(bval), file(bvec) from dwi_mask_grad_for_normalize
@@ -800,7 +800,7 @@ dwi_for_resample
     .join(mask_for_resample)
     .set{dwi_mask_for_resample}
 process Resample_DWI {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(mask) from dwi_mask_for_resample
@@ -841,7 +841,7 @@ dwi_for_resample_b0
     .set{dwi_and_grad_for_resample_b0}
 
 process Resample_B0 {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec) from dwi_and_grad_for_resample_b0
@@ -870,7 +870,7 @@ dwi_for_extract_dti_shell
     .set{dwi_and_grad_for_extract_dti_shell}
 
 process Extract_DTI_Shell {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec)\
@@ -898,7 +898,7 @@ dwi_and_grad_for_dti_metrics
     .set{dwi_and_grad_for_dti_metrics}
 
 process DTI_Metrics {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(b0_mask)\
@@ -959,7 +959,7 @@ dwi_for_extract_fodf_shell
     .set{dwi_and_grad_for_extract_fodf_shell}
 
 process Extract_FODF_Shell {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec)\
@@ -1067,7 +1067,7 @@ dwi_and_grad_for_rf
     .set{dwi_b0_for_rf}
 
 process Compute_FRF {
-    cpus 3
+    cpus 4
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(b0_mask)\
