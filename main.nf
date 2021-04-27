@@ -594,7 +594,7 @@ dwi_for_bet
     .set{dwi_b0_for_bet}
 
 process Bet_DWI {
-    cpus 2
+    cpus 1
 
     input:
     set sid, file(dwi), file(b0) from dwi_b0_for_bet
@@ -610,8 +610,9 @@ process Bet_DWI {
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
-    bet $b0 ${sid}__b0_bet.nii.gz -m -R -f $params.bet_dwi_final_f
-    scil_image_math.py convert ${sid}__b0_bet_mask.nii.gz ${sid}__b0_bet_mask.nii.gz --data_type uint8 -f
+    export ANTS_RANDOM_SEED=1234
+    scil_compute_ants_bet.py ${b0} ${sid}__b0_bet_map.nii.gz --type b0
+    scil_image_math.py upper_threshold_eq ${sid}__b0_bet_map.nii.gz 0.5 ${sid}__b0_bet_mask.nii.gz --data_type uint8
     mrcalc $dwi ${sid}__b0_bet_mask.nii.gz -mult ${sid}__dwi_bet.nii.gz -quiet -nthreads 1
     """
 }
@@ -740,7 +741,7 @@ process Resample_T1 {
 }
 
 process Bet_T1 {
-    cpus params.processes_brain_extraction_t1
+    cpus 1
 
     input:
     set sid, file(t1) from t1_for_bet
@@ -755,9 +756,8 @@ process Bet_T1 {
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
     export ANTS_RANDOM_SEED=1234
-    antsBrainExtraction.sh -d 3 -a $t1 -e $params.template_t1/t1_template.nii.gz\
-        -o bet/ -m $params.template_t1/t1_brain_probability_map.nii.gz -u 0
-    scil_image_math.py convert bet/BrainExtractionMask.nii.gz ${sid}__t1_bet_mask.nii.gz --data_type uint8
+    scil_compute_ants_bet.py ${t1} ${sid}__t1_bet_map.nii.gz --type t1
+    scil_image_math.py upper_threshold_eq ${sid}__t1_bet_map.nii.gz 0.5 ${sid}__t1_bet_mask.nii.gz --data_type uint8
     mrcalc $t1 ${sid}__t1_bet_mask.nii.gz -mult ${sid}__t1_bet.nii.gz -nthreads 1
     """
 }
