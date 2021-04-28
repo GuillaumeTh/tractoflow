@@ -615,6 +615,7 @@ process Bet_DWI {
     scil_compute_ants_bet.py ${b0} ${sid}__b0_bet_map.nii.gz --type b0
     scil_image_math.py upper_threshold_eq ${sid}__b0_bet_map.nii.gz 0.5 ${sid}__b0_bet_mask.nii.gz --data_type uint8
     mrcalc $dwi ${sid}__b0_bet_mask.nii.gz -mult ${sid}__dwi_bet.nii.gz -quiet -nthreads 1
+    mrcalc $b0 ${sid}__b0_bet_mask.nii.gz -mult ${sid}__b0_bet.nii.gz -quiet -nthreads 1
     """
 }
 
