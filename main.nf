@@ -357,7 +357,7 @@ process Bet_Prelim_DWI {
     scil_extract_b0.py $dwi $bval $bvec ${sid}__b0.nii.gz --mean\
         --b0_thr $params.b0_thr_extract_b0 --force_b0_threshold
     scil_compute_ants_bet.py ${sid}__b0.nii.gz ${sid}__b0_bet_map.nii.gz --type b0
-    scil_image_math.py upper_threshold_eq ${sid}__b0_bet_map.nii.gz 0.5 ${sid}__b0_bet_mask.nii.gz --data_type uint8
+    scil_image_math.py lower_threshold_eq ${sid}__b0_bet_map.nii.gz 0.5 ${sid}__b0_bet_mask.nii.gz --data_type uint8
     maskfilter ${sid}__b0_bet_mask.nii.gz dilate ${sid}__b0_bet_mask_dilated.nii.gz\
         --npass $params.dilate_b0_mask_prelim_brain_extraction -nthreads 1
     mrcalc ${sid}__b0.nii.gz ${sid}__b0_bet_mask_dilated.nii.gz\
@@ -613,7 +613,7 @@ process Bet_DWI {
     export OPENBLAS_NUM_THREADS=1
     export ANTS_RANDOM_SEED=1234
     scil_compute_ants_bet.py ${b0} ${sid}__b0_bet_map.nii.gz --type b0
-    scil_image_math.py upper_threshold_eq ${sid}__b0_bet_map.nii.gz 0.5 ${sid}__b0_bet_mask.nii.gz --data_type uint8
+    scil_image_math.py lower_threshold_eq ${sid}__b0_bet_map.nii.gz 0.5 ${sid}__b0_bet_mask.nii.gz --data_type uint8
     mrcalc $dwi ${sid}__b0_bet_mask.nii.gz -mult ${sid}__dwi_bet.nii.gz -quiet -nthreads 1
     mrcalc $b0 ${sid}__b0_bet_mask.nii.gz -mult ${sid}__b0_bet.nii.gz -quiet -nthreads 1
     """
@@ -759,7 +759,7 @@ process Bet_T1 {
     export OPENBLAS_NUM_THREADS=1
     export ANTS_RANDOM_SEED=1234
     scil_compute_ants_bet.py ${t1} ${sid}__t1_bet_map.nii.gz --type t1
-    scil_image_math.py upper_threshold_eq ${sid}__t1_bet_map.nii.gz 0.5 ${sid}__t1_bet_mask.nii.gz --data_type uint8
+    scil_image_math.py lower_threshold_eq ${sid}__t1_bet_map.nii.gz 0.5 ${sid}__t1_bet_mask.nii.gz --data_type uint8
     mrcalc $t1 ${sid}__t1_bet_mask.nii.gz -mult ${sid}__t1_bet.nii.gz -nthreads 1
     """
 }
