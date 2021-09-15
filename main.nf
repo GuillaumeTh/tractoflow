@@ -1286,7 +1286,7 @@ process PFT_Tracking {
             --sfthres $params.pft_sfthres --sfthres_init $params.pft_sfthres_init\
             --min_length $params.pft_min_len --max_length $params.pft_max_len\
             --particles $params.pft_particles --back $params.pft_back\
-            --forward $params.pft_front $compress --sh_basis $params.basis
+            --forward $params.pft_front $compress --sh_basis $params.basis --save_seeds
         """
 }
 
