@@ -144,6 +144,12 @@ else{
 labels_for_reg = Channel.empty()
 freesurfer_path = Channel.from("")
 bidsignore_path = Channel.from("")
+atlas_directory = Channel.fromPath("$params.atlas_directory/atlas")
+Channel.fromPath("$params.atlas_directory/mni_masked.nii.gz")
+    .into{atlas_anat;atlas_anat_for_average}
+
+atlas_config = Channel.fromPath("$params.atlas_directory/config_fss_1.json")
+
 if (params.input && !(params.bids && params.bids_config)){
     log.info "Input: $params.input"
     root = file(params.input)
@@ -175,6 +181,10 @@ if (params.input && !(params.bids && params.bids_config)){
 
     Channel.empty().into{sid_rev_dwi_included; sid_rev_dwi_included_for_eddy; sid_rev_dwi_for_prepare_topup_for_dwi; sid_rev_dwi_included_for_topup; sid_rev_dwi_for_topup; check_rev_number}
     Channel.empty().into{ch_sid_b0; complex_rev_b0_for_topup; check_complex_rev_b0}
+
+    Channel.fromPath("$params.input/**/anat.nii.gz")
+    .map{[it.parent.name, it]}
+    .set{dicom_anat}
 }
 else if (params.bids || params.bids_config){
     if (!params.bids_config) {
@@ -364,7 +374,7 @@ if (params.bids && workflow.profile.contains("ABS") && !params.fs){
     .separate(4)
 
 t1.unique()
-    .into{t1_for_denoise; t1_for_test_denoise}
+    .into{t1_for_denoise; t1_for_test_denoise; t1_for_anat_reg}
 
 check_complex_rev_b0.concat(check_simple_rev_b0).count().into{rev_b0_counter; number_rev_b0_for_compare}
 
@@ -1334,7 +1344,7 @@ process DTI_Metrics {
     file "${sid}__residual_std_residuals.npy"
     set sid, "${sid}__fa.nii.gz", "${sid}__md.nii.gz" into fa_md_for_fodf
     set sid, "${sid}__fa.nii.gz" into\
-        fa_for_reg, fa_for_pft_tracking, fa_for_local_tracking_mask, fa_for_local_seeding_mask
+        fa_for_reg, fa_for_pft_tracking, fa_for_local_tracking_mask, fa_for_local_seeding_mask, fa_for_rbx
 
     script:
     """
@@ -1412,8 +1422,7 @@ process Register_T1 {
     output:
     set sid, "${sid}__t1_warped.nii.gz" into t1_for_seg
     set sid, "${sid}__t1_warped.nii.gz", "${sid}__output0GenericAffine.mat",
-        "${sid}__output1Warp.nii.gz" into t1_for_freesurfer_reg
-    file "${sid}__output1InverseWarp.nii.gz"
+        "${sid}__output1Warp.nii.gz" into t1_for_freesurfer_reg, t1_for_bdl_reg
     file "${sid}__t1_mask_warped.nii.gz"
 
     script:
@@ -1791,7 +1800,7 @@ process PFT_Tracking {
     each curr_seed from pft_random_seed
 
     output:
-    file "${sid}__pft_tracking_${params.pft_algo}_${params.pft_seeding_mask_type}_seed_${curr_seed}.trk"
+    set sid, file("${sid}__pft_tracking_${params.pft_algo}_${params.pft_seeding_mask_type}_seed_${curr_seed}.trk") into pft_tracking
 
     when:
         params.run_pft_tracking
@@ -1893,7 +1902,7 @@ process Local_Tracking {
     each curr_seed from local_random_seed
 
     output:
-    file "${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk"
+    set sid, file("${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk") into local_tracking
 
     when:
         params.run_local_tracking
@@ -1921,4 +1930,170 @@ process Local_Tracking {
             ${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk\
             --remove_single_point
         """
+}
+
+fa_for_rbx
+    .combine(atlas_anat)
+    .set{anats_for_registration}
+process Register_Anat {
+    cpus params.register_processes
+    memory '2 GB'
+
+    input:
+    set sid, file(native_anat), file(atlas) from anats_for_registration
+
+    output:
+    set sid, "${sid}__output0GenericAffine.mat" into transformation_for_recognition, transformation_for_average
+    file "${sid}__outputWarped.nii.gz"
+    file "${sid}__native_anat.nii.gz"
+
+    script:
+    """
+    export ANTS_RANDOM_SEED=1234
+    antsRegistrationSyNQuick.sh -d 3 -f ${native_anat} -m ${atlas} -n ${params.register_processes} -o ${sid}__output -t a
+    cp ${native_anat} ${sid}__native_anat.nii.gz
+    """
+}
+
+
+local_tracking
+    .concat(pft_tracking)
+    .groupTuple(by:0)
+    .join(transformation_for_recognition)
+    .combine(atlas_config)
+    .combine(atlas_directory)
+    .set{tractogram_and_transformation}
+process Recognize_Bundles {
+    cpus params.rbx_processes
+    memory { params.single_dataset_size_GB.GB * params.rbx_processes }
+
+    input:
+    set sid, file(tractograms), file(transfo), file(config), file(directory) from tractogram_and_transformation
+
+    output:
+    set sid, "*.trk" into bundles_for_cleaning
+    file "results.json"
+    file "logfile.txt"
+
+    script:
+    """
+    mkdir tmp/
+    scil_recognize_multi_bundles.py ${tractograms} ${config} ${directory}/ ${transfo} --inverse --out_dir tmp/ \
+        --log_level DEBUG --minimal_vote_ratio $params.minimal_vote_ratio \
+        --seed $params.seed --processes $params.rbx_processes
+    mv tmp/* ./
+    """
+}
+
+
+bundles_for_cleaning
+    .combine(transformation_for_average, by:0)
+    .combine(atlas_anat_for_average)
+    .set{all_bundles_transfo_for_clean_average}
+
+process Clean_Bundles {
+    input:
+    set sid, file(bundles), file(transfo), file(atlas) from all_bundles_transfo_for_clean_average
+
+    output:
+    set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg
+
+    shell:
+    '''
+    for bundle in !{params.bundles};
+    do
+        scil_outlier_rejection.py *${bundle}.trk "!{sid}__${bundle}_cleaned.trk" \
+            --alpha !{params.outlier_alpha}
+    done
+    '''
+}
+
+
+dicom_anat
+    .join(t1_for_anat_reg)
+    .set{dicom_anat_t1_for_anat_reg}
+
+process Register_Anat_Dicom{
+    cpus params.register_processes
+
+    input:
+    set sid, file(dicom), file(t1) from dicom_anat_t1_for_anat_reg
+
+    output:
+    set sid, "${sid}__anat_warped.nii.gz" into anat_for_dicom
+
+    script:
+    """
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=$task.cpus
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    export ANTS_RANDOM_SEED=1234
+
+    antsRegistrationSyNQuick.sh -d 3 -m $dicom -f $t1 -n $params.register_processes -o output -t a
+    mv outputWarped.nii.gz ${sid}__anat_warped.nii.gz
+    """
+}
+
+bundles_cleaned_for_reg
+    .join(t1_for_bdl_reg)
+    .join(anat_for_dicom)
+    .set{bundles_cleaned_anat_for_reg}
+
+
+process Bundles_On_Anat{
+    cpus params.register_processes
+
+    input:
+    set sid, file(bundles), file(t1), file(mat), file(warp), file(anat) from bundles_cleaned_anat_for_reg
+
+    output:
+    set sid, "${sid}__*_*.nii.gz" into nii_for_dicom
+
+    script:
+    String bundles_list = bundles.join(", ").replace(',', '')
+    Integer nb_bundles = bundles.size()
+    """
+    scil_image_math.py convert ${anat} anat_f32.nii.gz --data_type float32 -f
+    scil_image_math.py normalize_max anat_f32.nii.gz anat_normalize.nii.gz -f
+    scil_image_math.py multiplication 300 anat_normalize.nii.gz anat_normalize_300.nii.gz -f
+    mkdir bundles_native/
+    cnt=25
+    nb_bundles=${nb_bundles}
+    step=\$(echo 300 \${nb_bundles} | awk '{print \$1 / (\$2 - 1)}')
+    echo \$step
+    for b in ${bundles_list};
+    do
+        bname=\${b%%_cleaned.trk}
+        bname=\${bname##*__}
+        scil_apply_transform_to_tractogram.py \${b} ${anat} ${mat} --in_deformation ${warp} bundles_native/\$b --reverse_operation -f
+        scil_compute_streamlines_density_map.py bundles_native/\$b bundles_native/\${bname}_bin.nii.gz -f --binary
+        scil_image_math.py convert bundles_native/\${bname}_bin.nii.gz bundles_native/\${bname}_f32.nii.gz --data_type float32 -f
+        scil_image_math.py multiplication \${cnt} bundles_native/\${bname}_f32.nii.gz bundles_native/mask_\${bname}_\${cnt}.nii.gz -f
+        ImageMath 3 ${sid}__\${bname}_\${cnt}.nii.gz addtozero bundles_native/mask_\${bname}_\${cnt}.nii.gz anat_normalize_300.nii.gz
+        mrconvert ${sid}__\${bname}_\${cnt}.nii.gz ${sid}__\${bname}_\${cnt}.nii.gz -stride -2,-1,3 -force
+        cnt=\$(echo \$cnt \${step} | awk '{print \$1 + \$2}');
+    done
+    scil_image_math.py addition bundles_native/mask_*.nii.gz mask_all_bdls.nii.gz -f
+    ImageMath 3 ${sid}__all_bundles.nii.gz addtozero mask_all_bdls.nii.gz anat_normalize_300.nii.gz
+    mrconvert ${sid}__all_bundles.nii.gz ${sid}__all_bundles.nii.gz -stride -2,-1,3 -force
+    """
+}
+
+process Nifti_To_Dicom{
+    cpus 1
+    container false
+    publishDir {"./dicom/$sid"}
+
+    input:
+    set sid, file(nifti) from nii_for_dicom
+
+    output:
+    file "SurgeryFlow/"
+
+    script:
+    String nifti_list =  nifti.join(" ").replace(".nii.gz", "").replace(sid+"__", "")
+    """
+    echo ${nifti_list}
+    nii2dcm ${nifti} SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list}
+    """
 }
