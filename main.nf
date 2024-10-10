@@ -2081,7 +2081,6 @@ process Bundles_On_Anat{
 
 process Nifti_To_Dicom{
     cpus 1
-    container false
     publishDir {"./dicom/$sid"}
 
     input:
@@ -2094,6 +2093,6 @@ process Nifti_To_Dicom{
     String nifti_list =  nifti.join(" ").replace(".nii.gz", "").replace(sid+"__", "")
     """
     echo ${nifti_list}
-    nii2dcm ${nifti} SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list}
+    convert_nii2dcm.py ${nifti} SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list}
     """
 }
