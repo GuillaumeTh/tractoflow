@@ -148,6 +148,9 @@ atlas_directory = Channel.fromPath("$params.atlas_directory/atlas")
 Channel.fromPath("$params.atlas_directory/mni_masked.nii.gz")
     .into{atlas_anat;atlas_anat_for_average}
 
+Channel.fromPath("$params.dicom")
+    .set{dicom}
+
 atlas_config = Channel.fromPath("$params.atlas_directory/config_fss_1.json")
 
 if (params.input && !(params.bids && params.bids_config)){
@@ -2079,12 +2082,16 @@ process Bundles_On_Anat{
     """
 }
 
+nii_for_dicom
+    .combine(dicom)
+    .set{nii_dicom_for_conversion}
+
 process Nifti_To_Dicom{
     cpus 1
     publishDir {"./dicom/$sid"}
 
     input:
-    set sid, file(nifti) from nii_for_dicom
+    set sid, file(nifti), file(dicom) from nii_dicom_for_conversion
 
     output:
     file "SurgeryFlow/"
@@ -2093,6 +2100,6 @@ process Nifti_To_Dicom{
     String nifti_list =  nifti.join(" ").replace(".nii.gz", "").replace(sid+"__", "")
     """
     echo ${nifti_list}
-    convert_nii2dcm.py ${nifti} SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list}
+    convert_nii2dcm.py ${nifti} SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list} -r ${dicom}
     """
 }
