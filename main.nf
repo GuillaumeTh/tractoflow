@@ -148,7 +148,8 @@ atlas_directory = Channel.fromPath("$params.atlas_directory/atlas")
 Channel.fromPath("$params.atlas_directory/mni_masked.nii.gz")
     .into{atlas_anat;atlas_anat_for_average}
 
-Channel.fromPath("$params.dicom")
+Channel.fromPath("$params.input/**/*.dcm")
+    .map{[it.parent.name, it]}
     .set{dicom}
 
 atlas_config = Channel.fromPath("$params.atlas_directory/config_fss_1.json")
@@ -2083,7 +2084,7 @@ process Bundles_On_Anat{
 }
 
 nii_for_dicom
-    .combine(dicom)
+    .join(dicom)
     .set{nii_dicom_for_conversion}
 
 process Nifti_To_Dicom{
