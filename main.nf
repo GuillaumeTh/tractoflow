@@ -2095,18 +2095,18 @@ nii_for_dicom
 
 process Nifti_To_Dicom{
     cpus 1
-    publishDir {"./dicom/$sid"}
+    publishDir "./dicom", mode: 'copy'
 
     input:
     set sid, file(nifti), file(dicom) from nii_dicom_for_conversion
 
     output:
-    file "SurgeryFlow/"
+    file "*__SurgeryFlow/"
 
     script:
     String nifti_list =  nifti.join(" ").replace(".nii.gz", "").replace(sid+"__", "")
     """
     echo ${nifti_list}
-    convert_nii2dcm.py ${nifti} SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list} -r ${dicom}
+    convert_nii2dcm.py ${nifti} ${sid}__SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list} -r ${dicom}
     """
 }
