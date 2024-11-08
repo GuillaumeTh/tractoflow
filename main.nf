@@ -2067,15 +2067,17 @@ process Bundles_On_Anat{
     echo \$step
     for b in ${bundles_list};
     do
-        bname=\${b%%_cleaned.trk}
-        bname=\${bname##*__}
-        scil_apply_transform_to_tractogram.py \${b} ${anat} ${mat} --in_deformation ${warp} bundles_native/\$b --reverse_operation -f
-        scil_compute_streamlines_density_map.py bundles_native/\$b bundles_native/\${bname}_bin.nii.gz -f --binary
-        scil_image_math.py convert bundles_native/\${bname}_bin.nii.gz bundles_native/\${bname}_f32.nii.gz --data_type float32 -f
-        scil_image_math.py multiplication \${cnt} bundles_native/\${bname}_f32.nii.gz bundles_native/mask_\${bname}_\${cnt}.nii.gz -f
-        ImageMath 3 ${sid}__\${bname}_\${cnt}.nii.gz addtozero bundles_native/mask_\${bname}_\${cnt}.nii.gz anat_normalize_300.nii.gz
-        mrconvert ${sid}__\${bname}_\${cnt}.nii.gz ${sid}__\${bname}_\${cnt}.nii.gz -stride -2,-1,3 -force
-        cnt=\$(echo \$cnt \${step} | awk '{print \$1 + \$2}');
+        if [ -f \${b} ]; then
+            bname=\${b%%_cleaned.trk}
+            bname=\${bname##*__}
+            scil_apply_transform_to_tractogram.py \${b} ${anat} ${mat} --in_deformation ${warp} bundles_native/\$b --reverse_operation -f
+            scil_compute_streamlines_density_map.py bundles_native/\$b bundles_native/\${bname}_bin.nii.gz -f --binary
+            scil_image_math.py convert bundles_native/\${bname}_bin.nii.gz bundles_native/\${bname}_f32.nii.gz --data_type float32 -f
+            scil_image_math.py multiplication \${cnt} bundles_native/\${bname}_f32.nii.gz bundles_native/mask_\${bname}_\${cnt}.nii.gz -f
+            ImageMath 3 ${sid}__\${bname}_\${cnt}.nii.gz addtozero bundles_native/mask_\${bname}_\${cnt}.nii.gz anat_normalize_300.nii.gz
+            mrconvert ${sid}__\${bname}_\${cnt}.nii.gz ${sid}__\${bname}_\${cnt}.nii.gz -stride -2,-1,3 -force
+            cnt=\$(echo \$cnt \${step} | awk '{print \$1 + \$2}');
+        fi
     done
 
     if [ \$nb_bundles -eq 1 ]; then
@@ -2095,7 +2097,7 @@ nii_for_dicom
 
 process Nifti_To_Dicom{
     cpus 1
-    publishDir "./dicom", mode: 'copy'
+    publishDir "./results", mode: 'copy'
 
     input:
     set sid, file(nifti), file(dicom) from nii_dicom_for_conversion
