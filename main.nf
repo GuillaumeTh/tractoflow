@@ -2077,7 +2077,13 @@ process Bundles_On_Anat{
         mrconvert ${sid}__\${bname}_\${cnt}.nii.gz ${sid}__\${bname}_\${cnt}.nii.gz -stride -2,-1,3 -force
         cnt=\$(echo \$cnt \${step} | awk '{print \$1 + \$2}');
     done
-    scil_image_math.py addition bundles_native/mask_*.nii.gz mask_all_bdls.nii.gz -f
+
+    if [ \$nb_bundles -eq 1 ]; then
+        mv masks_burned/mask_*.nii.gz mask_all_masks.nii.gz
+    else
+        scil_image_math.py addition masks_burned/mask_*.nii.gz mask_all_masks.nii.gz -f
+    fi
+
     ImageMath 3 ${sid}__all_bundles.nii.gz addtozero mask_all_bdls.nii.gz anat_normalize_300.nii.gz
     mrconvert ${sid}__all_bundles.nii.gz ${sid}__all_bundles.nii.gz -stride -2,-1,3 -force
     """
