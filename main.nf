@@ -2131,8 +2131,6 @@ process Bundles_On_Anat{
 }
 
 nii_for_dicom
-    .mix(lesion_for_dicom)
-    .groupTuple(by:0)
     .join(dicom)
     .set{nii_dicom_for_conversion}
 
