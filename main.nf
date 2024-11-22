@@ -1007,7 +1007,10 @@ process N4_T1 {
     set sid, file(t1) from t1_for_n4
 
     output:
-    set sid, "${sid}__t1_n4.nii.gz" into t1_for_resample, t1_for_test_resample
+    set sid, "${sid}__t1_n4.nii.gz" into t1_n4
+
+    when:
+    params.run_n4_bias_correction
 
     script:
     """
@@ -1019,6 +1022,10 @@ process N4_T1 {
         -c [300x150x75x50, 1e-6] -v 1
     """
 }
+
+t1_n4
+    .ifEmpty{t1_for_n4}
+    .set{t1_for_resample, t1_for_test_resample}
 
 process Resample_T1 {
     cpus 1
