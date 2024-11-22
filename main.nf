@@ -2100,6 +2100,7 @@ process Bundles_On_Anat{
     mkdir bundles_native/
     cnt=25
     nb_bundles=${nb_bundles}
+    echo ${nb_bundles}
     step=\$(echo 275 \${nb_bundles} | awk '{print \$1 / (\$2 - 1)}')
     if [ \$nb_bundles -eq 1 ]; then
         cnt=step
@@ -2120,7 +2121,7 @@ process Bundles_On_Anat{
     done
 
     if [ -e ${lesion} ]; then
-        mv ${lesion} masks_burned/
+        mv ${lesion} masks_burned
     fi
 
     if [ \$nb_bundles -eq 1 ]; then
