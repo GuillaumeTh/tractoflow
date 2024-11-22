@@ -2138,9 +2138,9 @@ process Bundles_On_Anat{
 }
 
 nii_for_dicom
-    .flatten()
     .mix(lesion_for_dicom)
     .groupTuple(by:0)
+    .map{id, nii -> [id, nii.flatten()]}
     .join(dicom).view()
     .set{nii_dicom_for_conversion}
 
