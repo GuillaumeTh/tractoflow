@@ -2103,7 +2103,7 @@ process Bundles_On_Anat{
     echo ${nb_bundles}
     step=\$(echo 275 \${nb_bundles} | awk '{print \$1 / (\$2 - 1)}')
     if [ \$nb_bundles -eq 1 ]; then
-        cnt=step
+        cnt=\$step
     fi
     for b in ${bundles_list};
     do
