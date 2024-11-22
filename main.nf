@@ -2032,7 +2032,7 @@ process Filter_Bundles {
     set sid, file(bundles), file(rois) from bundles_rois
 
     output:
-    set sid, "${sid}__*_cleaned.trk" into bundles_filtered_for_reg
+    set sid, "${sid}__*_filtered.trk into bundles_filtered_for_reg
 
     shell:
     rois_args=""
@@ -2043,11 +2043,9 @@ process Filter_Bundles {
     '''
     for bundle in !{params.bundles};
     do
-        scil_filter_tractogram.py *${bundle}*.trk !{sid}__${bundle}_cleaned.trk \
+        scil_filter_tractogram.py *${bundle}*.trk !{sid}__${bundle}_filtered.trk \
             !{rois_args} -f -v
-        ls
     done
-    ls
     '''
 }
 
@@ -2109,6 +2107,7 @@ process Bundles_On_Anat{
     do
         if [ -f \${b} ]; then
             bname=\${b%%_cleaned.trk}
+            bname=\${bname%%_filtered.trk}
             bname=\${bname##*__}
             scil_compute_streamlines_density_map.py \$b bundles_native/\${bname}_bin.nii.gz -f --binary
             scil_image_math.py convert bundles_native/\${bname}_bin.nii.gz bundles_native/\${bname}_f32.nii.gz --data_type float32 -f
