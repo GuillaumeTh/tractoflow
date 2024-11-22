@@ -2073,7 +2073,7 @@ bundles_filtered_for_reg
     .ifEmpty(bundles_cleaned_for_reg)
     .join(t1_for_bdl_reg)
     .join(anat_for_dicom)
-    .join(lesion_for_dicom, remember: true)
+    .join(lesion_for_dicom, remainder: true)
     .set{bundles_cleaned_anat_for_reg}
 
 
