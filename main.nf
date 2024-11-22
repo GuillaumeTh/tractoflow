@@ -2129,7 +2129,7 @@ process Bundles_On_Anat{
     if [ \$(ls -1 bundles_native/*mask* | wc -l) -eq 1 ]; then
         mv bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz
     else
-        scil_image_math.py addition bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz -f
+        scil_image_math.py addition bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz -f --data_type float32
     fi
 
     ImageMath 3 ${sid}__all_bundles.nii.gz addtozero mask_all_bdls.nii.gz anat_normalize_300.nii.gz
