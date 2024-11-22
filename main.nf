@@ -152,6 +152,14 @@ Channel.fromPath("$params.input/**/*.dcm")
     .map{[it.parent.name, it]}
     .set{dicom}
 
+Channel.fromPath("$params.input/**/rois/*.nii.gz")
+    .map{[it.parent.parent.name, it]}
+    .set{rois}
+
+Channel.fromPath("$params.input/**/lesion.nii.gz")
+    .map{[it.parent.name, it]}
+    .set{lesion}
+
 atlas_config = Channel.fromPath("$params.atlas_directory/config_fss_1.json")
 
 if (params.input && !(params.bids && params.bids_config)){
@@ -185,10 +193,6 @@ if (params.input && !(params.bids && params.bids_config)){
 
     Channel.empty().into{sid_rev_dwi_included; sid_rev_dwi_included_for_eddy; sid_rev_dwi_for_prepare_topup_for_dwi; sid_rev_dwi_included_for_topup; sid_rev_dwi_for_topup; check_rev_number}
     Channel.empty().into{ch_sid_b0; complex_rev_b0_for_topup; check_complex_rev_b0}
-
-    Channel.fromPath("$params.input/**/anat.nii.gz")
-    .map{[it.parent.name, it]}
-    .set{dicom_anat}
 }
 else if (params.bids || params.bids_config){
     if (!params.bids_config) {
@@ -378,7 +382,7 @@ if (params.bids && workflow.profile.contains("ABS") && !params.fs){
     .separate(4)
 
 t1.unique()
-    .into{t1_for_denoise; t1_for_test_denoise; t1_for_anat_reg}
+    .into{t1_for_denoise; t1_for_test_denoise; anat_for_dicom; anat_for_lesion}
 
 check_complex_rev_b0.concat(check_simple_rev_b0).count().into{rev_b0_counter; number_rev_b0_for_compare}
 
@@ -2000,7 +2004,7 @@ process Clean_Bundles {
     set sid, file(bundles), file(transfo), file(atlas) from all_bundles_transfo_for_clean_average
 
     output:
-    set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg
+    set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg, bundles_cleaned_for_filter
 
     shell:
     '''
@@ -2012,33 +2016,30 @@ process Clean_Bundles {
     '''
 }
 
+bundles_cleaned_for_filter
+    .join(rois)
+    .set{bundles_rois}
 
-dicom_anat
-    .join(t1_for_anat_reg)
-    .set{dicom_anat_t1_for_anat_reg}
-
-process Register_Anat_Dicom{
-    cpus params.register_processes
-
+process Filter_Bundles {
     input:
-    set sid, file(dicom), file(t1) from dicom_anat_t1_for_anat_reg
+    set sid, file(bundles), file(rois) from bundles_rois
 
     output:
-    set sid, "${sid}__anat_warped.nii.gz" into anat_for_dicom
+    set sid, "${sid}__*_cleaned.trk" into bundles_filtered_for_reg
 
-    script:
-    """
-    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=$task.cpus
-    export OMP_NUM_THREADS=1
-    export OPENBLAS_NUM_THREADS=1
-    export ANTS_RANDOM_SEED=1234
-
-    antsRegistrationSyNQuick.sh -d 3 -m $dicom -f $t1 -n $params.register_processes -o output -t a
-    mv outputWarped.nii.gz ${sid}__anat_warped.nii.gz
-    """
+    shell:
+    rois_args = ' '.join(['--drawn_roi ' + roi + "'any' 'include'" for roi in rois])
+    '''
+    for bundle in !{params.bundles};
+    do
+        scil_filter_tractogram.py *${bundle}.trk !{sid}__${bundle}_cleaned.trk \
+            !{rois_args}
+    done
+    '''
 }
 
-bundles_cleaned_for_reg
+bundles_filtered_for_reg
+    .ifEmpty { bundles_cleaned_for_reg }
     .join(t1_for_bdl_reg)
     .join(anat_for_dicom)
     .set{bundles_cleaned_anat_for_reg}
@@ -2091,7 +2092,33 @@ process Bundles_On_Anat{
     """
 }
 
+lesion
+    .join(anat_for_lesion)
+    .set{lesion_anat}
+
+process Lesion_On_Anat{
+    cpus params.register_processes
+
+    input:
+    set sid, file(lesion), file(anat) from lesion_anat
+
+    output:
+    set sid, "${sid}__lesion_290.nii.gz" into lesion_for_dicom
+
+    script:
+    """
+    scil_image_math.py convert ${anat} anat_f32.nii.gz --data_type float32 -f
+    scil_image_math.py normalize_max anat_f32.nii.gz anat_normalize.nii.gz -f
+    scil_image_math.py multiplication 300 anat_normalize.nii.gz anat_normalize_300.nii.gz -f
+    scil_image_math.py multiplication 290 ${lesion} lesion_290.nii.gz
+    ImageMath 3 ${sid}__lesion_290.nii.gz addtozero lesion_290.nii.gz anat_normalize_300.nii.gz
+    mrconvert ${sid}__lesion_290.nii.gz ${sid}__lesion_290.nii.gz -stride -2,-1,3 -force
+    """
+}
+
 nii_for_dicom
+    .mix(lesion_for_dicom)
+    .groupTuple(by:0)
     .join(dicom)
     .set{nii_dicom_for_conversion}
 
