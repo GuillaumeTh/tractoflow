@@ -2067,7 +2067,7 @@ process Bundles_On_Anat{
     mkdir bundles_native/
     cnt=25
     nb_bundles=${nb_bundles}
-    step=\$(echo 300 \${nb_bundles} | awk '{print \$1 / (\$2 - 1)}')
+    step=\$(echo 275 \${nb_bundles} | awk '{print \$1 / (\$2 - 1)}')
     echo \$step
     for b in ${bundles_list};
     do
