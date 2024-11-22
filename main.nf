@@ -2123,11 +2123,11 @@ process Bundles_On_Anat{
     if [ -e ${lesion} ]; then
         mv ${lesion} masks_burned
     fi
-
-    if [ \$nb_bundles -eq 1 ]; then
-        mv masks_burned/mask_*.nii.gz mask_all_masks.nii.gz
+    echo \$(ls -1 masks_burned | wc -l)
+    if [ \$(ls -1 masks_burned | wc -l) -eq 1 ]; then
+        mv masks_burned/*mask_*.nii.gz mask_all_masks.nii.gz
     else
-        scil_image_math.py addition masks_burned/mask_*.nii.gz mask_all_masks.nii.gz -f
+        scil_image_math.py addition masks_burned/*mask_*.nii.gz mask_all_masks.nii.gz -f
     fi
 
     ImageMath 3 ${sid}__all_bundles.nii.gz addtozero mask_all_bdls.nii.gz anat_normalize_300.nii.gz
