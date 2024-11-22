@@ -2121,13 +2121,15 @@ process Bundles_On_Anat{
     done
 
     if [ -e ${lesion} ]; then
-        mv ${lesion} masks_burned
+        mv ${lesion} bundles_native
+        echo "moved"
     fi
-    echo \$(ls -1 masks_burned | wc -l)
-    if [ \$(ls -1 masks_burned | wc -l) -eq 1 ]; then
-        mv masks_burned/*mask_*.nii.gz mask_all_masks.nii.gz
+    ls -1 bundles_native
+    echo \$(ls -1 bundles_native | wc -l)
+    if [ \$(ls -1 bundles_native | wc -l) -eq 1 ]; then
+        mv bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz
     else
-        scil_image_math.py addition masks_burned/*mask_*.nii.gz mask_all_masks.nii.gz -f
+        scil_image_math.py addition bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz -f
     fi
 
     ImageMath 3 ${sid}__all_bundles.nii.gz addtozero mask_all_bdls.nii.gz anat_normalize_300.nii.gz
