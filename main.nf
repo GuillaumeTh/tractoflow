@@ -2141,7 +2141,7 @@ nii_for_dicom
     .mix(lesion_for_dicom)
     .groupTuple(by:0)
     .map{id, nii -> [id, nii.flatten()]}
-    .join(dicom).view()
+    .join(dicom)
     .set{nii_dicom_for_conversion}
 
 process Nifti_To_Dicom{
