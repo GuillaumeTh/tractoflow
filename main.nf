@@ -2108,7 +2108,7 @@ process Bundles_On_Anat{
         if [ -f \${b} ]; then
             bname=\${b%%_cleaned.trk}
             bname=\${bname##*__}
-            scil_compute_streamlines_density_map.py bundles_native/\$b bundles_native/\${bname}_bin.nii.gz -f --binary
+            scil_compute_streamlines_density_map.py \$b bundles_native/\${bname}_bin.nii.gz -f --binary
             scil_image_math.py convert bundles_native/\${bname}_bin.nii.gz bundles_native/\${bname}_f32.nii.gz --data_type float32 -f
             scil_image_math.py multiplication \${cnt} bundles_native/\${bname}_f32.nii.gz bundles_native/mask_\${bname}_\${cnt}.nii.gz -f
             ImageMath 3 ${sid}__\${bname}_\${cnt}.nii.gz addtozero bundles_native/mask_\${bname}_\${cnt}.nii.gz anat_normalize_300.nii.gz
