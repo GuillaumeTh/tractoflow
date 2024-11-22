@@ -758,7 +758,6 @@ concatenated_dwi_for_eddy
 
 process Eddy_Topup {
     cpus { params.processes_eddy * task.attempt }
-    memory { 5.GB * task.attempt }
 
     input:
     set sid, file(dwi), file(bval), file(bvec), val(number_rev_dwi), file(b0s_corrected),
@@ -822,7 +821,6 @@ dwi_for_eddy
 
 process Eddy {
     cpus { params.processes_eddy * task.attempt }
-    memory { 5.GB * task.attempt }
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(mask), readout, encoding\
@@ -1902,7 +1900,6 @@ fodf_for_local_tracking
 
 process Local_Tracking {
     cpus { params.processes_local_tracking * task.attempt }
-    memory { 5.GB * task.attempt }
 
     input:
     set sid, file(fodf), file(tracking_mask), file(seed)\
@@ -1945,7 +1942,6 @@ fa_for_rbx
     .set{anats_for_registration}
 process Register_Anat {
     cpus params.register_processes
-    memory '2 GB'
 
     input:
     set sid, file(native_anat), file(atlas) from anats_for_registration
@@ -1973,7 +1969,6 @@ local_tracking
     .set{tractogram_and_transformation}
 process Recognize_Bundles {
     cpus params.rbx_processes
-    memory { params.single_dataset_size_GB.GB * params.rbx_processes }
 
     input:
     set sid, file(tractograms), file(transfo), file(config), file(directory) from tractogram_and_transformation
