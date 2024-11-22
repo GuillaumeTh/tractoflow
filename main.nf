@@ -2158,6 +2158,5 @@ process Nifti_To_Dicom{
     String nifti_list =  nifti.join(" ").replace(".nii.gz", "").replace(sid+"__", "")
     """
     convert_nii2dcm.py ${nifti} ${sid}__SurgeryFlow/ -d MR --study_description "SurgeryFlow" --series_description ${nifti_list} -r ${dicom}
-    ls
     """
 }
