@@ -1023,8 +1023,8 @@ process N4_T1 {
     """
 }
 
-t1_n4.view()
-    .ifEmpty{t1_test}.view()
+t1_n4
+    .ifEmpty(t1_test).view()
     .into{t1_for_resample; t1_for_test_resample}
 
 process Resample_T1 {
@@ -2041,7 +2041,7 @@ process Filter_Bundles {
 }
 
 bundles_filtered_for_reg
-    .ifEmpty { bundles_cleaned_for_reg }
+    .ifEmpty(bundles_cleaned_for_reg)
     .join(t1_for_bdl_reg)
     .join(anat_for_dicom)
     .set{bundles_cleaned_anat_for_reg}
