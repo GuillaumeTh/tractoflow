@@ -2046,6 +2046,7 @@ process Filter_Bundles {
         scil_filter_tractogram.py *${bundle}*.trk !{sid}__${bundle}_cleaned.trk \
             !{rois_args} -f
     done
+    ls
     '''
 }
 
