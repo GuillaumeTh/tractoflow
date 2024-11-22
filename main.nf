@@ -2032,7 +2032,7 @@ process Filter_Bundles {
     set sid, file(bundles), file(rois) from bundles_rois
 
     output:
-    set sid, "${sid}__*_filtered.trk into bundles_filtered_for_reg
+    set sid, "${sid}__*_filtered.trk" into bundles_filtered_for_reg
 
     shell:
     rois_args=""
