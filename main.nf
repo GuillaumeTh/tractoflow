@@ -1023,8 +1023,8 @@ process N4_T1 {
     """
 }
 
-t1_n4
-    .ifEmpty{t1_for_n4}
+t1_n4.view()
+    .ifEmpty{t1_for_n4.view()}.view()
     .into{t1_for_resample; t1_for_test_resample}
 
 process Resample_T1 {
