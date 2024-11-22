@@ -2060,7 +2060,8 @@ process Lesion_On_Anat{
     set sid, file(lesion), file(anat) from lesion_anat
 
     output:
-    set sid, "${sid}__lesion_10.nii.gz", "${sid}__mask_lesion_10.nii.gz" into lesion_for_dicom
+    set sid, "${sid}__mask_lesion_10.nii.gz" into lesion_mask_on_anat
+    set sid, "${sid}__lesion_10.nii.gz" into lesion_for_dicom
 
     script:
     """
@@ -2076,7 +2077,7 @@ process Lesion_On_Anat{
 bundles_filtered_for_reg
     .ifEmpty(bundles_cleaned_for_reg)
     .join(anat_for_dicom)
-    .join(lesion_for_dicom, remainder: true)
+    .join(lesion_mask_on_anat, remainder: true)
     .set{bundles_cleaned_anat_for_reg}
 
 
@@ -2084,7 +2085,7 @@ process Bundles_On_Anat{
     cpus params.register_processes
 
     input:
-    set sid, file(bundles), file(anat), file(lesion) from bundles_cleaned_anat_for_reg
+    set sid, file(bundles), file(anat), file(lesion), file(lesion_mask) from bundles_cleaned_anat_for_reg
 
     output:
     set sid, "${sid}__*_*.nii.gz" into nii_for_dicom
@@ -2134,6 +2135,8 @@ process Bundles_On_Anat{
 }
 
 nii_for_dicom
+    .mix(lesion_for_dicom)
+    .groupTuple(by:0)
     .join(dicom)
     .set{nii_dicom_for_conversion}
 
