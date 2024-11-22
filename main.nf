@@ -2092,7 +2092,7 @@ process Bundles_On_Anat{
 
     script:
     String bundles_list = bundles.join(", ").replace(',', '')
-    Integer nb_bundles = bundles.size() if bundles.size() < 33 else 1
+    Integer nb_bundles = bundles.size() < 33 ? bundles.size() : 1
     """
     scil_image_math.py convert ${anat} anat_f32.nii.gz --data_type float32 -f
     scil_image_math.py normalize_max anat_f32.nii.gz anat_normalize.nii.gz -f
