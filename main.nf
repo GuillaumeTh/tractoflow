@@ -2016,7 +2016,7 @@ process Clean_Bundles {
     '''
     for bundle in !{params.bundles};
     do
-        scil_apply_transform_to_tractogram.py \${b} !{anat} !{mat} --in_deformation !{warp} bundles_native/\$b --reverse_operation -f
+        scil_apply_transform_to_tractogram.py *${bundle}.trk !{anat} !{mat} --in_deformation !{warp} *${bundle}.trk --reverse_operation -f
         scil_outlier_rejection.py *${bundle}.trk "!{sid}__${bundle}_cleaned.trk" \
             --alpha !{params.outlier_alpha}
     done
