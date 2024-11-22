@@ -2031,7 +2031,7 @@ process Filter_Bundles {
     set sid, "${sid}__*_cleaned.trk" into bundles_filtered_for_reg
 
     shell:
-    def rois_args = rois.collect { roi -> "--drawn_roi ${roi} 'any' 'include'" }.join(' ')
+    rois_args = "".join(["--drawn_roi ${roi} 'any' 'include'" roi for rois])
     '''
     for bundle in !{params.bundles};
     do
@@ -2041,10 +2041,35 @@ process Filter_Bundles {
     '''
 }
 
+lesion
+    .join(anat_for_lesion)
+    .set{lesion_anat}
+
+process Lesion_On_Anat{
+    cpus params.register_processes
+
+    input:
+    set sid, file(lesion), file(anat) from lesion_anat
+
+    output:
+    set sid, "${sid}__lesion_10.nii.gz", "${sid}__mask_lesion_10.nii.gz" into lesion_for_dicom
+
+    script:
+    """
+    scil_image_math.py convert ${anat} anat_f32.nii.gz --data_type float32 -f
+    scil_image_math.py normalize_max anat_f32.nii.gz anat_normalize.nii.gz -f
+    scil_image_math.py multiplication 300 anat_normalize.nii.gz anat_normalize_300.nii.gz -f
+    scil_image_math.py multiplication 10 ${lesion} ${sid}__mask_lesion_10.nii.gz
+    ImageMath 3 ${sid}__lesion_10.nii.gz addtozero ${sid}__mask_lesion_10.nii.gz anat_normalize_300.nii.gz
+    mrconvert ${sid}__lesion_10.nii.gz ${sid}__lesion_10.nii.gz -stride -2,-1,3 -force
+    """
+}
+
 bundles_filtered_for_reg
     .ifEmpty(bundles_cleaned_for_reg)
     .join(t1_for_bdl_reg)
     .join(anat_for_dicom)
+    .join(lesion_for_dicom, remember: true)
     .set{bundles_cleaned_anat_for_reg}
 
 
@@ -2052,7 +2077,7 @@ process Bundles_On_Anat{
     cpus params.register_processes
 
     input:
-    set sid, file(bundles), file(t1), file(mat), file(warp), file(anat) from bundles_cleaned_anat_for_reg
+    set sid, file(bundles), file(t1), file(mat), file(warp), file(anat), file(lesion) from bundles_cleaned_anat_for_reg
 
     output:
     set sid, "${sid}__*_*.nii.gz" into nii_for_dicom
@@ -2068,7 +2093,9 @@ process Bundles_On_Anat{
     cnt=25
     nb_bundles=${nb_bundles}
     step=\$(echo 275 \${nb_bundles} | awk '{print \$1 / (\$2 - 1)}')
-    echo \$step
+    if [ \$nb_bundles -eq 1 ]; then
+        cnt=step
+    fi
     for b in ${bundles_list};
     do
         if [ -f \${b} ]; then
@@ -2084,6 +2111,10 @@ process Bundles_On_Anat{
         fi
     done
 
+    if [ -e ${lesion} ]; then
+        mv ${lesion} masks_burned/
+    fi
+
     if [ \$nb_bundles -eq 1 ]; then
         mv masks_burned/mask_*.nii.gz mask_all_masks.nii.gz
     else
@@ -2092,30 +2123,6 @@ process Bundles_On_Anat{
 
     ImageMath 3 ${sid}__all_bundles.nii.gz addtozero mask_all_bdls.nii.gz anat_normalize_300.nii.gz
     mrconvert ${sid}__all_bundles.nii.gz ${sid}__all_bundles.nii.gz -stride -2,-1,3 -force
-    """
-}
-
-lesion
-    .join(anat_for_lesion)
-    .set{lesion_anat}
-
-process Lesion_On_Anat{
-    cpus params.register_processes
-
-    input:
-    set sid, file(lesion), file(anat) from lesion_anat
-
-    output:
-    set sid, "${sid}__lesion_290.nii.gz" into lesion_for_dicom
-
-    script:
-    """
-    scil_image_math.py convert ${anat} anat_f32.nii.gz --data_type float32 -f
-    scil_image_math.py normalize_max anat_f32.nii.gz anat_normalize.nii.gz -f
-    scil_image_math.py multiplication 300 anat_normalize.nii.gz anat_normalize_300.nii.gz -f
-    scil_image_math.py multiplication 290 ${lesion} lesion_290.nii.gz
-    ImageMath 3 ${sid}__lesion_290.nii.gz addtozero lesion_290.nii.gz anat_normalize_300.nii.gz
-    mrconvert ${sid}__lesion_290.nii.gz ${sid}__lesion_290.nii.gz -stride -2,-1,3 -force
     """
 }
 
