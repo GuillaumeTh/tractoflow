@@ -998,7 +998,7 @@ process Denoise_T1 {
 t1_for_test_denoise
     .map{it -> if(!params.run_t1_denoising){it}}
     .mix(t1_for_mix_n4)
-    .into{t1_for_n4; t1_test}
+    .into{t1_for_n4; t1_for_test_n4}
 
 process N4_T1 {
     cpus 1
@@ -1023,8 +1023,9 @@ process N4_T1 {
     """
 }
 
-t1_n4
-    .ifEmpty(t1_test).view()
+t1_for_test_n4
+    .map{it -> if(!params.run_n4_bias_correction){it}}
+    .mix(t1_n4)
     .into{t1_for_resample; t1_for_test_resample}
 
 process Resample_T1 {
