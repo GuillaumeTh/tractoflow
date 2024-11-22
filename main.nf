@@ -2125,8 +2125,8 @@ process Bundles_On_Anat{
         echo "moved"
     fi
     ls -1 bundles_native
-    echo \$(ls -1 bundles_native/mask* | wc -l)
-    if [ \$(ls -1 bundles_native/mask* | wc -l) -eq 1 ]; then
+    echo \$(ls -1 bundles_native/*mask* | wc -l)
+    if [ \$(ls -1 bundles_native/*mask* | wc -l) -eq 1 ]; then
         mv bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz
     else
         scil_image_math.py addition bundles_native/*mask_*.nii.gz mask_all_bdls.nii.gz -f
