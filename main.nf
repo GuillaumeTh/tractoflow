@@ -382,7 +382,7 @@ if (params.bids && workflow.profile.contains("ABS") && !params.fs){
     .separate(4)
 
 t1.unique()
-    .into{t1_for_denoise; t1_for_test_denoise; anat_for_dicom; anat_for_lesion}
+    .into{t1_for_denoise; t1_for_test_denoise; anat_for_dicom; anat_for_lesion; anat_for_reg}
 
 check_complex_rev_b0.concat(check_simple_rev_b0).count().into{rev_b0_counter; number_rev_b0_for_compare}
 
@@ -1438,6 +1438,8 @@ process Register_T1 {
     set sid, "${sid}__t1_warped.nii.gz", "${sid}__output0GenericAffine.mat",
         "${sid}__output1Warp.nii.gz" into t1_for_freesurfer_reg, t1_for_bdl_reg
     file "${sid}__t1_mask_warped.nii.gz"
+    set sid, "${sid}__output0GenericAffine.mat",
+        "${sid}__output1Warp.nii.gz" into transfo_for_bdl_reg
 
     script:
     """
@@ -1998,13 +2000,14 @@ process Recognize_Bundles {
 
 
 bundles_for_cleaning
-    .combine(transformation_for_average, by:0)
     .combine(atlas_anat_for_average)
+    .join(anat_for_reg)
+    .join(transfo_for_bdl_reg)
     .set{all_bundles_transfo_for_clean_average}
 
 process Clean_Bundles {
     input:
-    set sid, file(bundles), file(transfo), file(atlas) from all_bundles_transfo_for_clean_average
+    set sid, file(bundles), file(atlas), file(mat), file(warp) from all_bundles_transfo_for_clean_average
 
     output:
     set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg, bundles_cleaned_for_filter
@@ -2013,6 +2016,7 @@ process Clean_Bundles {
     '''
     for bundle in !{params.bundles};
     do
+        scil_apply_transform_to_tractogram.py \${b} !{t1} !{mat} --in_deformation !{warp} bundles_native/\$b --reverse_operation -f
         scil_outlier_rejection.py *${bundle}.trk "!{sid}__${bundle}_cleaned.trk" \
             --alpha !{params.outlier_alpha}
     done
@@ -2071,7 +2075,6 @@ process Lesion_On_Anat{
 
 bundles_filtered_for_reg
     .ifEmpty(bundles_cleaned_for_reg)
-    .join(t1_for_bdl_reg)
     .join(anat_for_dicom)
     .join(lesion_for_dicom, remainder: true)
     .set{bundles_cleaned_anat_for_reg}
@@ -2081,7 +2084,7 @@ process Bundles_On_Anat{
     cpus params.register_processes
 
     input:
-    set sid, file(bundles), file(t1), file(mat), file(warp), file(anat), file(lesion) from bundles_cleaned_anat_for_reg
+    set sid, file(bundles), file(anat), file(lesion) from bundles_cleaned_anat_for_reg
 
     output:
     set sid, "${sid}__*_*.nii.gz" into nii_for_dicom
@@ -2105,7 +2108,6 @@ process Bundles_On_Anat{
         if [ -f \${b} ]; then
             bname=\${b%%_cleaned.trk}
             bname=\${bname##*__}
-            scil_apply_transform_to_tractogram.py \${b} ${anat} ${mat} --in_deformation ${warp} bundles_native/\$b --reverse_operation -f
             scil_compute_streamlines_density_map.py bundles_native/\$b bundles_native/\${bname}_bin.nii.gz -f --binary
             scil_image_math.py convert bundles_native/\${bname}_bin.nii.gz bundles_native/\${bname}_f32.nii.gz --data_type float32 -f
             scil_image_math.py multiplication \${cnt} bundles_native/\${bname}_f32.nii.gz bundles_native/mask_\${bname}_\${cnt}.nii.gz -f
