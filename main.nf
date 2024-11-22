@@ -2028,7 +2028,7 @@ process Filter_Bundles {
     set sid, "${sid}__*_cleaned.trk" into bundles_filtered_for_reg
 
     shell:
-    rois_args = ' '.join(['--drawn_roi ' + roi + "'any' 'include'" for roi in rois])
+    def rois_args = rois.collect { roi -> "--drawn_roi ${roi} 'any' 'include'" }.join(' ')
     '''
     for bundle in !{params.bundles};
     do
