@@ -2152,7 +2152,7 @@ process Nifti_To_Dicom{
     set sid, file(nifti), file(dicom) from nii_dicom_for_conversion
 
     output:
-    file "*__SurgeryFlow/"
+    file "*__SurgeryFlow"
 
     script:
     String nifti_list =  nifti.join(" ").replace(".nii.gz", "").replace(sid+"__", "")
