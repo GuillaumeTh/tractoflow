@@ -2007,7 +2007,7 @@ bundles_for_cleaning
 
 process Clean_Bundles {
     input:
-    set sid, file(bundles), file(atlas), file(mat), file(warp) from all_bundles_transfo_for_clean_average
+    set sid, file(bundles), file(atlas), file(anat), file(mat), file(warp) from all_bundles_transfo_for_clean_average
 
     output:
     set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg, bundles_cleaned_for_filter
@@ -2016,7 +2016,7 @@ process Clean_Bundles {
     '''
     for bundle in !{params.bundles};
     do
-        scil_apply_transform_to_tractogram.py \${b} !{t1} !{mat} --in_deformation !{warp} bundles_native/\$b --reverse_operation -f
+        scil_apply_transform_to_tractogram.py \${b} !{anat} !{mat} --in_deformation !{warp} bundles_native/\$b --reverse_operation -f
         scil_outlier_rejection.py *${bundle}.trk "!{sid}__${bundle}_cleaned.trk" \
             --alpha !{params.outlier_alpha}
     done
