@@ -2074,8 +2074,8 @@ process Lesion_On_Anat{
     """
 }
 
-bundles_filtered_for_reg
-    .ifEmpty(bundles_cleaned_for_reg)
+bundles_filtered_for_reg.view()
+    .ifEmpty(bundles_cleaned_for_reg.view())
     .join(anat_for_dicom).view()
     .join(lesion_mask_on_anat, remainder: true).view()
     .set{bundles_cleaned_anat_for_reg}
