@@ -154,7 +154,7 @@ Channel.fromPath("$params.input/**/*.dcm")
 
 Channel.fromPath("$params.input/**/rois/*.nii.gz")
     .map{[it.parent.parent.name, it]}
-    .set{rois}
+    .into{rois; rois_count}
 
 Channel.fromPath("$params.input/**/lesion.nii.gz")
     .map{[it.parent.name, it]}
@@ -2074,9 +2074,10 @@ process Lesion_On_Anat{
     """
 }
 
-bundles_filtered_for_reg.view()
-    .ifEmpty(bundles_cleaned_for_reg.view())
-    .join(anat_for_dicom).view()
+bundles_filtered_for_reg
+    .map{it -> if(rois_count.size() > 0){it}}
+    .mix(bundles_cleaned_for_reg)
+    .join(anat_for_dicom)
     .join(lesion_mask_on_anat, remainder: true).view()
     .set{bundles_cleaned_anat_for_reg}
 
