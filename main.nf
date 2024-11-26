@@ -2078,7 +2078,7 @@ bundles_filtered_for_reg
     .map{it -> if(rois_count.size() > 0){it}}
     .mix(bundles_cleaned_for_reg)
     .join(anat_for_dicom)
-    .join(lesion_mask_on_anat, remainder: true).view()
+    .join(lesion_mask_on_anat, remainder: true)
     .set{bundles_cleaned_anat_for_reg}
 
 
