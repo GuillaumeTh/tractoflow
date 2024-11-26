@@ -2077,7 +2077,7 @@ process Lesion_On_Anat{
 bundles_filtered_for_reg
     .ifEmpty(bundles_cleaned_for_reg)
     .join(anat_for_dicom)
-    .join(lesion_mask_on_anat, remainder: true)
+    .join(lesion_mask_on_anat, remainder: true).view()
     .set{bundles_cleaned_anat_for_reg}
 
 
