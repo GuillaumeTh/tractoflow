@@ -161,177 +161,66 @@ Channel.fromPath("$params.input/**/lesion.nii.gz")
     .set{lesion}
 
 atlas_config = Channel.fromPath("$params.atlas_directory/config_fss_1.json")
+bids_config = Channel.fromPath("$params.bids_config")
 
-if (params.input && !(params.bids && params.bids_config)){
-    log.info "Input: $params.input"
-    root = file(params.input)
-    Channel
-        .fromFilePairs("$root/**/*{bval,bvec,dwi.nii.gz,t1.nii.gz}",
-                       size: 4,
-                       maxDepth:1,
-                       flat: true) {it.parent.name}
-        .into{data; data_for_sid}
+Channel.fromPath("$params.input/*/*", type:"dir")
+    .map{[it.parent.name, it]}
+    .into{dicom_dir; sid_dicom_dir}
+
+sid_dicom_dir.map{[it[0]]}.set{sid}
+
+Channel.fromPath("$params.input/**/*[!.nii.gz]")
+    .first()
+    .mix(sid)
+    .collect()
+    .map{it -> [it[1], it[0]]}
+    .set{dicom}
+
+process DCM2BIDS {
+    cpus 1
+    container false
+
+    input:
+    set sid, file(dicom) from dicom_dir
+    file(conf) from bids_config
+
+    output:
+    set sid, "*__bval", "*__bvec", "*__dwi.nii.gz", "*__t1.nii.gz" into data, data_for_sid
+    set sid, "*__rev_b0.nii.gz" into rev_b0 optional true
     
-    data_for_sid.map{[it[0]]}.set{ch_sid_dwi}
-
-    labels_for_reg = Channel
-        .fromFilePairs("$root/**/*{aparc+aseg.nii.gz,wmparc.nii.gz}",
-                        size: 2,
-                        maxDepth:1,
-                        flat: true) {it.parent.name}
-
-    data.map{[it[0], "_", it[1..3], it[4], params.readout, params.encoding_direction].flatten()}
-        .into{in_data; check_subjects_number}
-
-    Channel
-        .fromPath("$root/**/*rev_b0.nii.gz",
-                        maxDepth:1)
-        .map{[it.parent.name, it]}
-        .tap{rev_b0_for_topup; check_simple_rev_b0}
-        .map{ [it[0]] }
-        .into{sid_rev_b0_included; sid_rev_b0_included_for_eddy_topup; sid_rev_b0_for_prepare_topup_dwi}
-
-    Channel.empty().into{sid_rev_dwi_included; sid_rev_dwi_included_for_eddy; sid_rev_dwi_for_prepare_topup_for_dwi; sid_rev_dwi_included_for_topup; sid_rev_dwi_for_topup; check_rev_number}
-    Channel.empty().into{ch_sid_b0; complex_rev_b0_for_topup; check_complex_rev_b0}
+    shell:
+    """
+    dcm2bids -d !{dicom} -p !{sid} -c !{conf}
+    cp sub-!{sid}/dwi/sub-!{sid}_dwi.bval !{sid}__bval
+    cp sub-!{sid}/dwi/sub-!{sid}_dwi.bvec !{sid}__bvec
+    cp sub-!{sid}/dwi/sub-!{sid}_dwi.nii.gz !{sid}__dwi.nii.gz
+    cp sub-!{sid}/anat/sub-!{sid}_t1.nii.gz !{sid}__t1.nii.gz
+    """
 }
-else if (params.bids || params.bids_config){
-    if (!params.bids_config) {
-        log.info "Input BIDS: $params.bids"
-        if (params.fs) {
-            freesurfer_path = file(params.fs)
-            log.info "Freesurfer path: $params.fs"
-        }
-        if (params.bidsignore) {
-            bidsignore_path = file(params.bidsignore)
-            log.info "BIDSignore path: $params.bidsignore"
-        }
-        log.info "Clean_bids: $params.clean_bids"
-        log.info ""
 
-        bids = file(params.bids)
+log.info "Input: $params.input"
+root = file(params.input)
 
-        process Read_BIDS {
-            publishDir = params.Read_BIDS_Publish_Dir
-            scratch = false
-            stageInMode = 'symlink'
-            tag = {"Read_BIDS"}
-            errorStrategy = { task.attempt <= 3 ? 'retry' : 'terminate' }
+data_for_sid.map{[it[0]]}.set{ch_sid_dwi}
 
-            input:
-            file(bids_folder) from bids
-            file(fs_folder) from freesurfer_path
-            file(bidsignore) from bidsignore_path
+labels_for_reg = Channel
+    .fromFilePairs("$root/**/*{aparc+aseg.nii.gz,wmparc.nii.gz}",
+                    size: 2,
+                    maxDepth:1,
+                    flat: true) {it.parent.name}
 
-            output:
-            file "tractoflow_bids_struct.json" into bids_struct
+data.map{[it[0], "_", it[1..3], it[4], params.readout, params.encoding_direction].flatten()}
+    .into{in_data; check_subjects_number}
 
-            script:
-            clean_flag = params.clean_bids ? '--clean ' : ''
+rev_b0
+    .tap{rev_b0_for_topup; check_simple_rev_b0}
+    .map{ [it[0]] }
+    .into{sid_rev_b0_included; sid_rev_b0_included_for_eddy_topup; sid_rev_b0_for_prepare_topup_dwi}
 
-            """
-            scil_validate_bids.py $bids_folder tractoflow_bids_struct.json\
-                --readout $params.readout $clean_flag\
-                ${!fs_folder.empty() ? "--fs $fs_folder" : ""}\
-                ${!bidsignore.empty() ? "--bids_ignore $bidsignore" : ""}\
-                -v
-            """
-        }
-    }
+Channel.empty().into{sid_rev_dwi_included; sid_rev_dwi_included_for_eddy; sid_rev_dwi_for_prepare_topup_for_dwi; sid_rev_dwi_included_for_topup; sid_rev_dwi_for_topup; check_rev_number}
+Channel.empty().into{ch_sid_b0; complex_rev_b0_for_topup; check_complex_rev_b0}
+Channel.empty().into{check_simple_rev_b0; check_rev_number}
 
-    else {
-        log.info "BIDS config: $params.bids_config"
-        config = file(params.bids_config)
-        bids_struct = Channel.from(config)
-    }
-
-    ch_in_data = Channel.create()
-    ch_sid_rev_dwi = Channel.create()
-    ch_sid_rev_b0 = Channel.create()
-    ch_sid_dwi = Channel.create()
-    ch_sid_b0 = Channel.create()
-    ch_complex_rev_b0 = Channel.create()
-    ch_simple_rev_b0 = Channel.create()
-    labels_for_reg = Channel.create()
-
-    bids_struct.map{it ->
-    jsonSlurper = new JsonSlurper()
-        data = jsonSlurper.parseText(it.getText())
-        for (item in data){
-            sid = "sub-" + item.subject
-
-            if (item.session){
-                sid += "_ses-" + item.session
-            }
-
-            if (item.run){
-                sid += "_run-" + item.run
-            }
-            for (key in item.keySet()){
-                if(item[key] == 'todo'){
-                    error "Error ~ Please look at your tractoflow_bids_struct.json " +
-                    "in Read_BIDS folder.\nPlease fix todo fields and give " +
-                    "this file in input using --bids_config option instead of " +
-                    "using --bids."
-                }
-                else if (item[key] == 'error_readout'){
-                    error "Error ~ Please look at your tractoflow_bids_struct.json " +
-                    "in Read_BIDS folder.\nPlease fix error_readout fields. "+
-                    "This error indicate that readout time looks wrong.\n"+
-                    "Please correct the value or remove the subject in the json and " +
-                    "give the updated file in input using --bids_config option instead of " +
-                    "using --bids."
-                }
-            }
-            sub = [sid, "_", file(item.bval), file(item.bvec), file(item.dwi),
-                   file(item.t1), item.TotalReadoutTime, item.DWIPhaseEncodingDir[0]]
-            ch_in_data.bind(sub)
-            ch_sid_dwi.bind([sid])
-            if(item.rev_topup) {
-                ch_sid_rev_b0.bind([sid])
-                if(item.topup) {
-                  ch_sid_b0.bind([sid])
-                  sub_complex_rev_b0 = [sid, file(item.rev_topup), file(item.topup)]
-                  ch_complex_rev_b0.bind(sub_complex_rev_b0)
-                }
-                else{
-                  sub_simple_rev_b0 = [sid, file(item.rev_topup)]
-                  ch_simple_rev_b0.bind(sub_simple_rev_b0)
-                }
-            }
-            
-            if(item.rev_dwi){
-                ch_rev_in_data = [sid, "_rev_", file(item.rev_bval), file(item.rev_bvec), file(item.rev_dwi),
-                                    file(item.t1), item.TotalReadoutTime, item.DWIPhaseEncodingDir[0]]
-                ch_sid_rev_dwi.bind([sid])
-                ch_in_data.bind(ch_rev_in_data)
-            }
-
-            if(item.wmparc) {
-                sub_labels_for_reg = [sid, file(item.aparc_aseg), file(item.wmparc)]
-                labels_for_reg.bind(sub_labels_for_reg)
-            }
-        }
-        ch_sid_rev_dwi.close()
-        ch_sid_rev_b0.close()
-        ch_sid_dwi.close()
-        ch_sid_b0.close()
-        ch_in_data.close()
-        ch_simple_rev_b0.close()
-        ch_complex_rev_b0.close()
-        labels_for_reg.close()
-    }
-
-    Channel.empty().into{sid_rev_dwi_included; sid_rev_b0_for_prepare_topup_dwi; sid_rev_dwi_included_for_topup; check_rev_number}
-    ch_sid_rev_dwi.into{sid_rev_dwi_included; sid_rev_dwi_included_for_topup; sid_rev_dwi_for_prepare_topup_for_dwi; sid_rev_dwi_included_for_eddy; check_rev_number}
-    ch_sid_rev_b0.into{sid_rev_b0_included; sid_rev_dwi_for_topup; sid_rev_b0_included_for_eddy_topup; sid_rev_b0_for_prepare_topup_dwi}
-    ch_in_data.into{in_data; check_subjects_number}
-
-    ch_simple_rev_b0.into{rev_b0_for_topup; check_simple_rev_b0}
-    ch_complex_rev_b0.into{complex_rev_b0_for_topup; check_complex_rev_b0}
-}
-else {
-    error "Error ~ Please use --input, --bids or --bids_config for the input data."
-}
 check_subjects_number.map{[it[0]]}.unique().set{unique_subjects_number}
 
 if (params.sh_fitting && !params.sh_fitting_shells){
