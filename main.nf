@@ -178,7 +178,6 @@ Channel.fromPath("$params.input/**/*[!.nii.gz]")
 
 process DCM2BIDS {
     cpus 1
-    container false
 
     input:
     set sid, file(dicom) from dicom_dir
