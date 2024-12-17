@@ -188,6 +188,7 @@ process DCM2BIDS {
     set sid, "*__rev_b0.nii.gz" into rev_b0 optional true
     
     shell:
+    sid = sid.replaceAll(/[^a-zA-Z0-9]/, '')
     """
     dcm2bids -d !{dicom} -p !{sid} -c !{conf}
     cp sub-!{sid}/dwi/sub-!{sid}_dwi.bval !{sid}__bval
@@ -342,7 +343,6 @@ ch_sid_dwi
 
 process README {
     cpus 1
-    publishDir = params.Readme_Publish_Dir
     tag = "README"
 
     output:
