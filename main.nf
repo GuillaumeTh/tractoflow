@@ -144,9 +144,6 @@ else{
 labels_for_reg = Channel.empty()
 freesurfer_path = Channel.from("")
 bidsignore_path = Channel.from("")
-atlas_directory = Channel.fromPath("$params.atlas_directory/atlas")
-Channel.fromPath("$params.atlas_directory/mni_masked.nii.gz")
-    .into{atlas_anat;atlas_anat_for_average}
 
 Channel.fromPath("$params.input/**/*.dcm")
     .map{[it.parent.name, it]}
@@ -160,9 +157,6 @@ Channel.fromPath("$params.input/**/lesion.nii.gz")
     .map{[it.parent.name, it]}
     .set{lesion}
 
-atlas_config = Channel.fromPath("$params.atlas_directory/config_fss_1.json")
-bids_config = Channel.fromPath("$params.bids_config")
-
 Channel.fromPath("$params.input/*/*", type:"dir")
     .map{[it.parent.name, it]}
     .into{dicom_dir; sid_dicom_dir}
@@ -173,7 +167,7 @@ Channel.fromPath("$params.input/**/*[!.nii.gz]")
     .first()
     .mix(sid)
     .collect()
-    .map{it -> [it[1], it[0]]}
+    .map{it -> [it[1].replaceAll(/[^a-zA-Z0-9]/, ''), it[0]]}
     .set{dicom}
 
 process DCM2BIDS {
@@ -181,7 +175,6 @@ process DCM2BIDS {
 
     input:
     set sid, file(dicom) from dicom_dir
-    file(conf) from bids_config
 
     output:
     set sid, "*__bval", "*__bvec", "*__dwi.nii.gz", "*__t1.nii.gz" into data, data_for_sid
@@ -190,7 +183,7 @@ process DCM2BIDS {
     shell:
     sid = sid.replaceAll(/[^a-zA-Z0-9]/, '')
     """
-    dcm2bids -d !{dicom} -p !{sid} -c !{conf}
+    dcm2bids -d !{dicom} -p !{sid} -c /assets/*.conf
     cp sub-!{sid}/dwi/sub-!{sid}_dwi.bval !{sid}__bval
     cp sub-!{sid}/dwi/sub-!{sid}_dwi.bvec !{sid}__bvec
     cp sub-!{sid}/dwi/sub-!{sid}_dwi.nii.gz !{sid}__dwi.nii.gz
@@ -1835,14 +1828,11 @@ process Local_Tracking {
         """
 }
 
-fa_for_rbx
-    .combine(atlas_anat)
-    .set{anats_for_registration}
 process Register_Anat {
     cpus params.register_processes
 
     input:
-    set sid, file(native_anat), file(atlas) from anats_for_registration
+    set sid, file(native_anat) from fa_for_rbx
 
     output:
     set sid, "${sid}__output0GenericAffine.mat" into transformation_for_recognition, transformation_for_average
@@ -1852,7 +1842,7 @@ process Register_Anat {
     script:
     """
     export ANTS_RANDOM_SEED=1234
-    antsRegistrationSyNQuick.sh -d 3 -f ${native_anat} -m ${atlas} -n ${params.register_processes} -o ${sid}__output -t a
+    antsRegistrationSyNQuick.sh -d 3 -f ${native_anat} -m $params.atlas_directory/mni_masked.nii.gz -n ${params.register_processes} -o ${sid}__output -t a
     cp ${native_anat} ${sid}__native_anat.nii.gz
     """
 }
@@ -1862,14 +1852,12 @@ local_tracking
     .concat(pft_tracking)
     .groupTuple(by:0)
     .join(transformation_for_recognition)
-    .combine(atlas_config)
-    .combine(atlas_directory)
     .set{tractogram_and_transformation}
 process Recognize_Bundles {
     cpus params.rbx_processes
 
     input:
-    set sid, file(tractograms), file(transfo), file(config), file(directory) from tractogram_and_transformation
+    set sid, file(tractograms), file(transfo) from tractogram_and_transformation
 
     output:
     set sid, "*.trk" into bundles_for_cleaning
@@ -1879,7 +1867,7 @@ process Recognize_Bundles {
     script:
     """
     mkdir tmp/
-    scil_recognize_multi_bundles.py ${tractograms} ${config} ${directory}/ ${transfo} --inverse --out_dir tmp/ \
+    scil_recognize_multi_bundles.py ${tractograms} $params.atlas_directory/config_fss_1.json $params.atlas_directory/atlas/ ${transfo} --inverse --out_dir tmp/ \
         --log_level DEBUG --minimal_vote_ratio $params.minimal_vote_ratio \
         --seed $params.seed --processes $params.rbx_processes
     mv tmp/* ./
@@ -1888,26 +1876,36 @@ process Recognize_Bundles {
 
 
 bundles_for_cleaning
-    .combine(atlas_anat_for_average)
-    .join(anat_for_reg)
+    .combine(anat_for_reg, by:0)
     .join(transfo_for_bdl_reg)
     .set{all_bundles_transfo_for_clean_average}
 
 process Clean_Bundles {
+    publishDir "./results", mode: 'copy', pattern: '*__README.txt'
+
     input:
-    set sid, file(bundles), file(atlas), file(anat), file(mat), file(warp) from all_bundles_transfo_for_clean_average
+    set sid, file(bundles), file(anat), file(mat), file(warp) from all_bundles_transfo_for_clean_average
 
     output:
-    set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg, bundles_cleaned_for_filter
+    set sid, "${sid}__*_cleaned.trk" into bundles_cleaned_for_reg, bundles_cleaned_for_filter optional true
+    file "${sid}__README.txt" optional true
 
     shell:
     '''
     for bundle in !{params.bundles};
     do
-        scil_apply_transform_to_tractogram.py *${bundle}.trk !{anat} !{mat} --in_deformation !{warp} *${bundle}.trk --reverse_operation -f
-        scil_outlier_rejection.py *${bundle}.trk "!{sid}__${bundle}_cleaned.trk" \
-            --alpha !{params.outlier_alpha}
+        if [ -f *${bundle}.trk ]; then
+            scil_apply_transform_to_tractogram.py *${bundle}.trk !{anat} !{mat} --in_deformation !{warp} *${bundle}.trk --reverse_operation -f
+            scil_outlier_rejection.py *${bundle}.trk "!{sid}__${bundle}_cleaned.trk" \
+                --alpha !{params.outlier_alpha}
+        else
+            echo "Bundle ${bundle} not found." >> !{sid}__README.txt
+        fi
     done
+    nb_cleaned=\$(ls -1 *cleaned.trk | wc -l)
+    if [ \$nb_cleaned -eq 0 ]; then
+        echo "No valid bundles found." > !{sid}__README.txt
+    fi
     '''
 }
 
