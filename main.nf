@@ -159,16 +159,7 @@ Channel.fromPath("$params.input/**/lesion.nii.gz")
 
 Channel.fromPath("$params.input/*/*", type:"dir")
     .map{[it.parent.name, it]}
-    .into{dicom_dir; sid_dicom_dir}
-
-sid_dicom_dir.map{[it[0]]}.set{sid}
-
-Channel.fromPath("$params.input/**/*[!.nii.gz]")
-    .first()
-    .mix(sid)
-    .collect()
-    .map{it -> [it[1].replaceAll(/[^a-zA-Z0-9]/, ''), it[0]]}
-    .set{dicom}
+    .set{dicom_dir}
 
 process DCM2BIDS {
     cpus 1
@@ -194,7 +185,14 @@ process DCM2BIDS {
 log.info "Input: $params.input"
 root = file(params.input)
 
-data_for_sid.map{[it[0]]}.set{ch_sid_dwi}
+data_for_sid.map{[it[0]]}.into{ch_sid_dwi; ch_sid_dicom}
+
+Channel.fromPath("$params.input/**/*[!.nii.gz]")
+    .first()
+    .mix(ch_sid_dicom)
+    .collect()
+    .map{it -> [it[1], it[0]]}
+    .set{dicom}
 
 labels_for_reg = Channel
     .fromFilePairs("$root/**/*{aparc+aseg.nii.gz,wmparc.nii.gz}",
