@@ -145,10 +145,6 @@ labels_for_reg = Channel.empty()
 freesurfer_path = Channel.from("")
 bidsignore_path = Channel.from("")
 
-Channel.fromPath("$params.input/**/*.dcm")
-    .map{[it.parent.name, it]}
-    .set{dicom}
-
 Channel.fromPath("$params.input/**/rois/*.nii.gz")
     .map{[it.parent.parent.name, it]}
     .into{rois; rois_count}
@@ -187,7 +183,7 @@ root = file(params.input)
 
 data_for_sid.map{[it[0]]}.into{ch_sid_dwi; ch_sid_dicom}
 
-Channel.fromPath("$params.input/**/*[!.nii.gz]")
+Channel.fromPath("$params.input/**/*[!.nii.gz,!DICOMDIR]")
     .first()
     .mix(ch_sid_dicom)
     .collect()
