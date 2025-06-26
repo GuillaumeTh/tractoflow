@@ -332,10 +332,6 @@ if (params.local_tracking_mask_type != "wm" && params.local_tracking_mask_type !
     error "Error ~ --local_tracking_mask_type can only take wm or fa. Please select one of these choices"
 }
 
-if (params.local_algo != "det" && params.local_algo != "prob"){
-    error "Error ~ --local_algo can only take det or prob. Please select one of these choices"
-}
-
 if (params.pft_algo != "det" && params.pft_algo != "prob"){
     error "Error ~ --pft_algo can only take det or prob. Please select one of these choices"
 }
@@ -354,6 +350,10 @@ if (params.run_pft_tracking && workflow.profile.contains("ABS")){
 
 if (params.bids && workflow.profile.contains("ABS") && !params.fs){
     error "Error ~ --bids parameter cannot be run with Atlas Based Segmentation (ABS) profile"
+}
+
+if (!params.local_tracking_container){
+    error "Error ~ --local_tracking_container is not set. Please set it to the container you want to use for local tracking."
 }
 
 (dwi, gradients, t1, readout_encoding) = in_data
@@ -418,6 +418,14 @@ if (params.local_random_seed instanceof String){
 }
 else{
     local_random_seed = params.local_random_seed
+}
+
+if (params.local_algo instanceof String){
+    local_algo = params.local_algo?.tokenize(',')
+    log.info "Local algo: $local_algo"
+}
+else{
+    local_algo = params.local_algo
 }
 
 gradients
@@ -868,7 +876,9 @@ gradients_from_eddy
           gradients_for_fodf_shell;
           gradients_for_normalize;
           gradients_for_bet;
-          gradients_for_sh_fitting_shell}
+          gradients_for_sh_fitting_shell;
+          gradients_for_msmt_fodf;
+          gradients_for_msmt_frf}
 
 dwi_for_bet
     .join(gradients_for_bet)
@@ -1167,7 +1177,7 @@ process Resample_DWI {
 dwi_for_test_resample
     .map{it -> if(!params.run_resample_dwi){it}}
     .mix(dwi_resampled_for_mix)
-    .into{dwi_for_extract_b0; dwi_for_extract_dti_shell; dwi_for_extract_fodf_shell; dwi_for_extract_sh_fitting_shell}
+    .into{dwi_for_extract_b0; dwi_for_extract_dti_shell; dwi_for_extract_fodf_shell; dwi_for_extract_sh_fitting_shell; dwi_for_msmt_fodf; dwi_for_msmt_frf}
 
 dwi_for_extract_b0
     .join(gradients_for_extract_b0)
@@ -1185,7 +1195,9 @@ process Extract_B0 {
     set sid, "${sid}__b0_mask_resampled.nii.gz" into\
         b0_mask_for_dti_metrics,
         b0_mask_for_fodf,
-        b0_mask_for_rf
+        b0_mask_for_rf,
+        b0_mask_for_msmt_fodf,
+        b0_mask_for_msmt_frf
 
     script:
     """
@@ -1603,6 +1615,9 @@ process Compute_FRF {
     set sid, "${sid}__frf.txt" into unique_frf, unique_frf_for_mean
     file "${sid}__frf.txt" into all_frf_to_collect
 
+    when:
+    params.run_csd
+
     script:
     if (params.set_frf)
         """
@@ -1641,7 +1656,7 @@ process Mean_FRF {
     file "mean_frf.txt" into mean_frf
 
     when:
-    params.mean_frf && !params.set_frf
+    params.mean_frf && !params.set_frf && params.run_csd
 
     script:
     """
@@ -1675,13 +1690,16 @@ process FODF_Metrics {
         file(md), file(frf) from dwi_b0_metrics_frf_for_fodf
 
     output:
-    set sid, "${sid}__fodf.nii.gz" into fodf_for_pft_tracking, fodf_for_local_tracking
+    set sid, "${sid}__fodf.nii.gz" into csd_fodf_for_tracking
     file "${sid}__peaks.nii.gz"
     file "${sid}__peak_indices.nii.gz"
     file "${sid}__afd_max.nii.gz"
     file "${sid}__afd_total.nii.gz"
     file "${sid}__afd_sum.nii.gz"
     file "${sid}__nufo.nii.gz"
+
+    when:
+    params.run_csd
 
     script:
     """
@@ -1711,6 +1729,67 @@ process FODF_Metrics {
         --rt $params.relative_threshold --at \${a_threshold}
     """
 }
+
+dwi_for_msmt_frf
+    .join(gradients_for_msmt_frf)
+    .join(b0_mask_for_msmt_frf)
+    .set{dwi_grad_mask_for_msmt_frf}
+
+process Compute_MSMT_FRF {
+    cpus 1
+
+    input:
+    set sid, file(dwi), file(bval), file(bvec), file(mask) from dwi_grad_mask_for_msmt_frf
+
+    output:
+    set sid, "${sid}__wm_response.txt", "${sid}__gm_response.txt", "${sid}__csf_response.txt" into msmt_frf_for_fodf
+
+    when:
+    params.run_msmt
+
+    script:
+    """
+    MRTRIX_RNG_SEED=1234
+    dwi2response dhollander $dwi ${sid}__wm_response.txt ${sid}__gm_response.txt ${sid}__csf_response.txt\
+        -fslgrad $bvec $bval -nthreads $task.cpus -mask $mask
+    """
+}
+
+dwi_for_msmt_fodf
+    .join(gradients_for_msmt_fodf)
+    .join(b0_mask_for_msmt_fodf)
+    .join(msmt_frf_for_fodf)
+    .set{dwi_grad_mask_frf_for_msmt_fodf}
+
+process Compute_MSMT_FODF {
+    cpus 8
+
+    input:
+    set sid, file(dwi), file(bval), file(bvec), file(mask), file(wm_frf), file(gm_frf), file(csf_frf)\
+        from dwi_grad_mask_frf_for_msmt_fodf
+
+    output:
+    set sid, "${sid}__wm_fodf.nii.gz" into msmt_fodf_for_tracking
+    file "${sid}__gm_fodf.nii.gz"
+    file "${sid}__csf_fodf.nii.gz"
+
+    when:
+    params.run_msmt
+
+    script:
+    """
+    MRTRIX_RNG_SEED=1234
+    dwi2fod msmt_csd $dwi $wm_frf ${sid}__wm_fodf.nii.gz $gm_frf ${sid}__gm_fodf.nii.gz $csf_frf ${sid}__csf_fodf.nii.gz\
+        -fslgrad $bvec $bval -nthreads $task.cpus -mask $mask
+    scil_convert_sh_basis.py ${sid}__wm_fodf.nii.gz ${sid}__wm_fodf.nii.gz 'tournier07' -f
+    scil_convert_sh_basis.py ${sid}__gm_fodf.nii.gz ${sid}__gm_fodf.nii.gz 'tournier07' -f
+    scil_convert_sh_basis.py ${sid}__csf_fodf.nii.gz ${sid}__csf_fodf.nii.gz 'tournier07' -f
+    """
+}
+
+csd_fodf_for_tracking
+    .mix(msmt_fodf_for_tracking)
+    .into{fodf_for_pft_tracking; fodf_for_local_tracking; msmt_fodf_for_ifod2}
 
 process PFT_Tracking_Maps {
     cpus 1
@@ -1859,7 +1938,7 @@ process Local_Seeding_Mask {
     set sid, file(wm), file(fa) from wm_fa_for_local_seeding_mask
 
     output:
-    set sid, "${sid}__local_seeding_mask.nii.gz" into tracking_seeding_mask_for_local
+    set sid, "${sid}__local_seeding_mask.nii.gz" into tracking_seeding_mask_for_local, seeding_mask_for_ifod2
 
     when:
         params.run_local_tracking
@@ -1886,14 +1965,16 @@ fodf_for_local_tracking
 process Local_Tracking {
     cpus { params.processes_local_tracking * task.attempt }
     memory { 5.GB * task.attempt }
+    container params.local_tracking_container
 
     input:
     set sid, file(fodf), file(tracking_mask), file(seed)\
         from fodf_maps_for_local_tracking
     each curr_seed from local_random_seed
+    each curr_algo from local_algo
 
     output:
-    file "${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk"
+    file "${sid}__local_tracking_${curr_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk"
 
     when:
         params.run_local_tracking
@@ -1910,14 +1991,50 @@ process Local_Tracking {
         export OPENBLAS_NUM_THREADS=1
         scil_compute_local_tracking.py $fodf $seed $tracking_mask\
             tmp.trk\
-            --algo $params.local_algo --$params.local_seeding $params.local_nbr_seeds\
+            --algo $curr_algo --$params.local_seeding $params.local_nbr_seeds\
             --seed $curr_seed --step $params.local_step --theta $params.local_theta\
             --sf $params.local_sfthres --min_length $params.local_min_len\
             --max_length $params.local_max_len $compress --sh_basis $params.basis\
             $use_gpu 
 
         scil_remove_invalid_streamlines.py tmp.trk\
-            ${sid}__local_tracking_${params.local_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk\
+            ${sid}__local_tracking_${curr_algo}_${params.local_seeding_mask_type}_seeding_${params.local_tracking_mask_type}_mask_seed_${curr_seed}.trk\
             --remove_single_point
         """
+}
+
+msmt_fodf_for_ifod2
+    .join(seeding_mask_for_ifod2)
+    .set{msmt_fodf_for_ifod2_tracking}
+
+process IFOD2_Tracking {
+    cpus { params.processes_ifod2_tracking * task.attempt }
+    memory { 5.GB * task.attempt }
+
+    input:
+    set sid, file(fodf), file(seeds) from msmt_fodf_for_ifod2_tracking
+
+    output:
+    file "${sid}__ifod2_tracking.trk"
+
+    script:
+    """
+    export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    scil_convert_sh_basis.py $fodf ${sid}__fodf_mrtrix.nii.gz 'descoteaux07'
+    tckgen ${sid}__fodf_mrtrix.nii.gz ${sid}__ifod2_tracking.tck \
+        -algorithm iFOD2 \
+        -nthreads $task.cpus \
+        -step $params.ifod2_step \
+        -angle $params.ifod2_theta \
+        -minlength $params.ifod2_min_len \
+        -maxlength $params.ifod2_max_len \
+        -cutoff $params.ifod2_cutoff \
+        -seed_random_per_voxel ${seeds} $params.ifod2_npv
+    scil_convert_tractogram.py ${sid}__ifod2_tracking.tck ${sid}__ifod2_tracking.trk --reference $seeds
+    scil_remove_invalid_streamlines.py ${sid}__ifod2_tracking.trk\
+            ${sid}__ifod2_tracking.trk\
+            --remove_single_point -f
+    """
 }
