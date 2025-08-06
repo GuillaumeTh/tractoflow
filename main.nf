@@ -441,31 +441,6 @@ readout_encoding
 ch_sid_dwi
     .into{ch_sid_dwi_for_rev; ch_sid_dwi_for_dwi}
 
-
-process README {
-    cpus 1
-    publishDir = params.Readme_Publish_Dir
-    tag = "README"
-
-    output:
-    file "readme.txt"
-
-    script:
-    String list_options = new String();
-    for (String item : params) {
-        list_options += item + "\n"
-    }
-    """
-    echo "TractoFlow pipeline\n" >> readme.txt
-    echo "Start time: $workflow.start\n" >> readme.txt
-    echo "[Command-line]\n$workflow.commandLine\n" >> readme.txt
-    echo "[Git Info]\n" >> readme.txt
-    echo "$workflow.repository - $workflow.revision [$workflow.commitId]\n" >> readme.txt
-    echo "[Options]\n" >> readme.txt
-    echo "$list_options" >> readme.txt
-    """
-}
-
 dwi_for_prelim_bet
     .combine(gradients_for_prelim_bet, by: [0,1])
     .set{dwi_gradient_for_prelim_bet}
