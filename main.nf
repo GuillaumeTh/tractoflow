@@ -507,7 +507,6 @@ process Bet_Prelim_DWI {
 
 process Denoise_DWI {
     cpus params.processes_denoise_dwi
-    label 'big_mem'
 
     input:
     set sid, val(rev), file(dwi) from dwi_for_denoise
@@ -886,7 +885,6 @@ dwi_for_bet
 
 process Bet_DWI {
     cpus 2
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec) from dwi_gradients_for_bet
@@ -913,7 +911,6 @@ process Bet_DWI {
 
 process N4_DWI {
     cpus 1
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(b0), file(b0_mask)\
@@ -941,7 +938,6 @@ dwi_for_crop
 
 process Crop_DWI {
     cpus 1
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(b0), file(b0_mask) from dwi_and_b0_mask_b0_for_crop
@@ -1094,7 +1090,6 @@ dwi_mask_for_normalize
     .set{dwi_mask_grad_for_normalize}
 process Normalize_DWI {
     cpus 3
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(mask), file(bval), file(bvec) from dwi_mask_grad_for_normalize
@@ -1185,7 +1180,6 @@ dwi_for_extract_b0
 
 process Extract_B0 {
     cpus 3
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec) from dwi_and_grad_for_extract_b0
@@ -1268,7 +1262,6 @@ dwi_for_extract_dti_shell
 
 process Extract_DTI_Shell {
     cpus 3
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec)\
@@ -1311,7 +1304,6 @@ dwi_and_grad_for_dti_metrics
 
 process DTI_Metrics {
     cpus 3
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(b0_mask)\
@@ -1373,7 +1365,6 @@ dwi_for_extract_fodf_shell
 
 process Extract_FODF_Shell {
     cpus 3
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec)\
@@ -1605,7 +1596,6 @@ dwi_and_grad_for_rf
 
 process Compute_FRF {
     cpus 3
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(b0_mask)\
@@ -1683,7 +1673,6 @@ dwi_and_grad_for_fodf
 
 process FODF_Metrics {
     cpus params.processes_fodf
-    label 'big_mem'
 
     input:
     set sid, file(dwi), file(bval), file(bvec), file(b0_mask), file(fa),
