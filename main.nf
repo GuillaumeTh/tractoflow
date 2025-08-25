@@ -153,7 +153,14 @@ if (params.input && !(params.bids && params.bids_config)){
                        maxDepth:1,
                        flat: true) {it.parent.name}
         .into{data; data_for_sid}
-    
+
+    Channel
+        .fromFilePairs("$root/**/*claustrum_mask.nii.gz",
+                       size: 1,
+                       maxDepth:1,
+                       flat: true) {it.parent.name}
+                       .into{claustrum_mask}
+
     data_for_sid.map{[it[0]]}.set{ch_sid_dwi}
 
     labels_for_reg = Channel
@@ -1404,16 +1411,17 @@ process Extract_FODF_Shell {
 t1_and_mask_for_reg
     .join(fa_for_reg)
     .join(b0_for_reg)
+    .join(claustrum_mask)
     .set{t1_fa_b0_for_reg}
 
 process Register_T1 {
     cpus params.processes_registration
 
     input:
-    set sid, file(t1), file(t1_mask), file(fa), file(b0) from t1_fa_b0_for_reg
+    set sid, file(t1), file(t1_mask), file(fa), file(b0), file(mask) from t1_fa_b0_for_reg
 
     output:
-    set sid, "${sid}__t1_warped.nii.gz" into t1_for_seg
+    set sid, "${sid}__t1_warped.nii.gz", "${sid}__claustrum_mask_warped.nii.gz" into t1_for_seg
     set sid, "${sid}__t1_warped.nii.gz", "${sid}__output0GenericAffine.mat",
         "${sid}__output1Warp.nii.gz" into t1_for_freesurfer_reg
     file "${sid}__output1InverseWarp.nii.gz"
@@ -1450,7 +1458,11 @@ process Register_T1 {
     antsApplyTransforms -d 3 -i $t1_mask -r ${sid}__t1_warped.nii.gz \
         -o ${sid}__t1_mask_warped.nii.gz -n NearestNeighbor \
         -t ${sid}__output1Warp.nii.gz ${sid}__output0GenericAffine.mat
+    antsApplyTransforms -d 3 -i $mask -r ${sid}__t1_warped.nii.gz \
+        -o ${sid}__claustrum_mask_warped.nii.gz -n NearestNeighbor \
+        -t ${sid}__output1Warp.nii.gz ${sid}__output0GenericAffine.mat
     scil_image_math.py convert ${sid}__t1_mask_warped.nii.gz ${sid}__t1_mask_warped.nii.gz --data_type uint8 -f
+    scil_image_math.py convert ${sid}__claustrum_mask_warped.nii.gz ${sid}__claustrum_mask_warped.nii.gz --data_type uint8 -f
     """
 }
 
@@ -1558,7 +1570,7 @@ process Segment_Tissues {
     cpus 1
 
     input:
-    set sid, file(t1) from t1_for_seg
+    set sid, file(t1), file(mask) from t1_for_seg
 
     output:
     set sid, "${sid}__map_wm.nii.gz", "${sid}__map_gm.nii.gz",
@@ -1583,6 +1595,14 @@ process Segment_Tissues {
     mv t1_pve_2.nii.gz ${sid}__map_wm.nii.gz
     mv t1_pve_1.nii.gz ${sid}__map_gm.nii.gz
     mv t1_pve_0.nii.gz ${sid}__map_csf.nii.gz
+
+    mrcalc ${sid}__map_wm.nii.gz $mask -add ${sid}__map_wm.nii.gz -force
+    mrcalc ${sid}__map_gm.nii.gz $mask -sub ${sid}__map_gm.nii.gz -force
+    mrcalc ${sid}__map_csf.nii.gz $mask -sub ${sid}__map_csf.nii.gz -force
+
+    mrcalc ${sid}__mask_wm.nii.gz ${mask} -add ${sid}__mask_wm.nii.gz -force
+    mrcalc ${sid}__mask_gm.nii.gz ${mask} -sub ${sid}__mask_gm.nii.gz -force
+    mrcalc ${sid}__mask_csf.nii.gz ${mask} -sub ${sid}__mask_csf.nii.gz -force
     """
 }
 
