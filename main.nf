@@ -147,6 +147,7 @@ bidsignore_path = Channel.from("")
 if (params.input && !(params.bids && params.bids_config)){
     log.info "Input: $params.input"
     root = file(params.input)
+    mask = file(params.mask)
     Channel
         .fromFilePairs("$root/**/*{bval,bvec,dwi.nii.gz,t1.nii.gz}",
                        size: 4,
@@ -155,7 +156,7 @@ if (params.input && !(params.bids && params.bids_config)){
         .into{data; data_for_sid}
 
     Channel
-        .fromFilePairs("$root/**/*claustrum_mask.nii.gz",
+        .fromFilePairs("$mask/**/*claustrum_mask.nii.gz",
                        size: 1,
                        maxDepth:1,
                        flat: true) {it.parent.name}
