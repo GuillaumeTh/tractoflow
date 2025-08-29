@@ -156,11 +156,11 @@ if (params.input && !(params.bids && params.bids_config)){
         .into{data; data_for_sid}
 
     Channel
-        .fromFilePairs("$mask/**/*claustrum_mask.nii.gz",
+        .fromFilePairs("$mask/**/*claustrum_mask_dilated.nii.gz",
                        size: 1,
                        maxDepth:1,
                        flat: true) {it.parent.name}
-                       .into{claustrum_mask}
+                       .set{claustrum_mask}
 
     data_for_sid.map{[it[0]]}.set{ch_sid_dwi}
 
@@ -1601,9 +1601,9 @@ process Segment_Tissues {
     mrcalc ${sid}__map_gm.nii.gz $mask -sub ${sid}__map_gm.nii.gz -force
     mrcalc ${sid}__map_csf.nii.gz $mask -sub ${sid}__map_csf.nii.gz -force
 
-    mrcalc ${sid}__mask_wm.nii.gz ${mask} -add ${sid}__mask_wm.nii.gz -force
-    mrcalc ${sid}__mask_gm.nii.gz ${mask} -sub ${sid}__mask_gm.nii.gz -force
-    mrcalc ${sid}__mask_csf.nii.gz ${mask} -sub ${sid}__mask_csf.nii.gz -force
+    mrcalc ${sid}__mask_wm.nii.gz ${mask} -add ${sid}__mask_wm.nii.gz -force -datatype uint8
+    mrcalc ${sid}__mask_gm.nii.gz ${mask} -sub ${sid}__mask_gm.nii.gz -force -datatype uint8
+    mrcalc ${sid}__mask_csf.nii.gz ${mask} -sub ${sid}__mask_csf.nii.gz -force -datatype uint8
     """
 }
 
