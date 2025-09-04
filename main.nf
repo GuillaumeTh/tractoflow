@@ -1597,18 +1597,18 @@ process Segment_Tissues {
     mv t1_pve_1.nii.gz ${sid}__map_gm.nii.gz
     mv t1_pve_0.nii.gz ${sid}__map_csf.nii.gz
 
-    mrcalc ${sid}__map_wm.nii.gz $mask -add ${sid}__map_wm.nii.gz -force
+    mrcalc ${sid}__map_wm.nii.gz $mask -add ${sid}__map_wm.nii.gz -force -stride 1,2,3
     scil_image_math.py upper_clip ${sid}__map_wm.nii.gz 1 ${sid}__map_wm.nii.gz -f
-    mrcalc ${sid}__map_gm.nii.gz $mask -sub ${sid}__map_gm.nii.gz -force
+    mrcalc ${sid}__map_gm.nii.gz $mask -sub ${sid}__map_gm.nii.gz -force -stride 1,2,3
     scil_image_math.py lower_clip ${sid}__map_gm.nii.gz 0 ${sid}__map_gm.nii.gz -f
-    mrcalc ${sid}__map_csf.nii.gz $mask -sub ${sid}__map_csf.nii.gz -force
+    mrcalc ${sid}__map_csf.nii.gz $mask -sub ${sid}__map_csf.nii.gz -force -stride 1,2,3
     scil_image_math.py lower_clip ${sid}__map_csf.nii.gz 0 ${sid}__map_csf.nii.gz -f
 
-    mrcalc ${sid}__mask_wm.nii.gz ${mask} -add ${sid}__mask_wm.nii.gz -force -datatype uint8
+    mrcalc ${sid}__mask_wm.nii.gz ${mask} -add ${sid}__mask_wm.nii.gz -force -datatype uint8 -stride 1,2,3
     scil_image_math.py upper_clip ${sid}__mask_wm.nii.gz 1 ${sid}__mask_wm.nii.gz -f
-    mrcalc ${sid}__mask_gm.nii.gz ${mask} -sub ${sid}__mask_gm.nii.gz -force -datatype uint8
+    mrcalc ${sid}__mask_gm.nii.gz ${mask} -sub ${sid}__mask_gm.nii.gz -force -datatype uint8 -stride 1,2,3
     scil_image_math.py lower_clip ${sid}__mask_gm.nii.gz 0 ${sid}__mask_gm.nii.gz -f
-    mrcalc ${sid}__mask_csf.nii.gz ${mask} -sub ${sid}__mask_csf.nii.gz -force -datatype uint8
+    mrcalc ${sid}__mask_csf.nii.gz ${mask} -sub ${sid}__mask_csf.nii.gz -force -datatype uint8 -stride 1,2,3
     scil_image_math.py lower_clip ${sid}__mask_csf.nii.gz 0 ${sid}__mask_csf.nii.gz -f
     """
 }
